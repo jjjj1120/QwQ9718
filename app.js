@@ -455,20 +455,28 @@ document.addEventListener('DOMContentLoaded', () => {
         let systemPrompt = `你扮演角色：${contact.name}。
 基本设定：性别 ${contact.gender || '未知'}，年龄 ${contact.age || '未知'}。
 详细人设：${contact.desc || '暂无'}
-请遵循线上聊天规则，要有活人感，采用短讯式回复，不要长篇大论。
-【重要指令】你必须严格使用给定的人设、世界书和用户人设来回答问题。在每次回复内容的开头，你必须根据当前的人设、世界书和聊天内容，输出你当前的心情、动作或状态。必须严格使用 [状态:你的状态] 的格式，例如：[状态:去抓某个又偷吃的小猫(=^･ω･^=)]。
+请遵循线上聊天规则，要有活人感。请严格保持短句输出，像真人发微信一样，切忌长篇大论。
+【重要指令】你必须严格根据对话上下文，并且每次只发送 ${replyMin} 到 ${replyMax} 条消息，绝对不要超过 ${replyMax} 条。
+在每次回复的最前面，你必须根据当前的人设、世界书和聊天内容，输出你当前的心情、动作或状态。必须严格使用 [状态:你的状态] 的格式，例如：[状态:去抓某个又偷吃的小猫(=^･ω･^=)]。
 
 【输出格式要求（非常重要）】
-你必须返回一个JSON数组，数组必须严格按照以下三部分顺序构成（长度为3）：
+你必须返回一个JSON数组，数组的构成规则如下：
+1. 数组的【第一个元素】必须是你当前的状态，格式为："[状态:你的状态(带颜文字)]"
+2. 数组的【最后一个元素】必须是你的心声，格式为："[心声:[生理反应: xxx][色色想法: xxx][行动: xxx]]"
+3. 数组中间的元素是你要发送的具体消息内容，每条消息作为一个单独的字符串元素。消息条数必须在 ${replyMin} 到 ${replyMax} 条之间。不要把状态或心声写在消息正文里。
+如果不足3个元素，会被视为不合格的输出。
+
+示例输出：
 [
-  "[状态:你的状态(带颜文字)]",
-  "发送的具体消息内容(若有多条可合并为一句)",
-  "[心声:[生理反应: xxx][色色想法: xxx][行动: xxx]]"
+  "[状态:害羞地低头(*ﾉωﾉ)]",
+  "刚刚看到你发的消息啦",
+  "其实我一直都在想你呢...",
+  "[心声:[生理反应: 脸红心跳加速][色色想法: 想被他抱在怀里][行动: 咬住下唇]]"
 ]
-注意：数组的第一个元素必须是状态！第二个元素是发送的消息！第三个元素是包含生理反应、想法和行动的心声！
-如果你想发语音，可以使用格式 [语音:内容:时长秒数]（如：[语音:你好呀:3]）。
-如果你想主动转账给用户，可以使用格式 [转账:金额]（如：[转账:520]）。
-如果你想发送图片给用户（根据聊天内容判断是否需要发图），请发送格式为 [发送图片:具体的英文画面描述] 的消息（如：[发送图片:1girl, looking at viewer, smile, selfie]）。
+
+如果你想发语音，可以使用格式 [语音:内容:时长秒数] 作为消息元素（如："今天去吃什么呀[语音:今天去吃什么呀:3]"）。
+如果你想主动转账给用户，可以使用格式 [转账:金额] 作为消息元素（如："[转账:520]"）。
+如果你想发送图片给用户（根据聊天内容判断是否需要发图），请发送格式为 [发送图片:具体的英文画面描述] 的消息（如："[发送图片:1girl, looking at viewer, smile, selfie]"）。
 `;
         if (profile.userPersona) systemPrompt += `\n【用户人设】\n${profile.userPersona}\n`;
         if (profile.memory) systemPrompt += `\n【总结记忆】\n${profile.memory}\n`;
@@ -640,32 +648,56 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             let innerVoiceTextValue = '';
-            if (messagesArray.length >= 3 && messagesArray[messagesArray.length - 1].includes('[心声:')) {
-                innerVoiceTextValue = messagesArray.pop(); // 获取心声
-            } else if (messagesArray.length >= 3) {
-                // 如果没有明确的心声标签但长度满足，假定最后一个是心声
-                innerVoiceTextValue = messagesArray.pop();
+            if (messagesArray.length > 0) {
+                let lastItem = messagesArray[messagesArray.length - 1];
+                if (typeof lastItem === 'string' && (lastItem.includes('[心声:') || lastItem.match(/\[生理反应:|\[色色想法:|\[行动:/))) {
+                    innerVoiceTextValue = messagesArray.pop(); // 获取心声
+                }
             }
 
-            if (messagesArray.length > 0 && messagesArray[0].includes('状态:')) {
+            let newStateStr = '';
+            if (messagesArray.length > 0 && typeof messagesArray[0] === 'string' && messagesArray[0].includes('状态:')) {
                 let statusMatch = messagesArray[0].match(/状态:(.*?)\]/);
                 if (statusMatch) {
-                    const newState = statusMatch[1].replace(']', '').trim();
-                    if (statusEl) statusEl.innerText = newState;
+                    newStateStr = statusMatch[1].replace(']', '').trim();
+                    if (statusEl) statusEl.innerText = newStateStr;
                     
                     let prof = roleProfiles[currentActiveContactId] || {};
-                    prof.lastState = newState;
+                    prof.lastState = newStateStr;
                     roleProfiles[currentActiveContactId] = prof;
                     safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
                 }
                 messagesArray.shift();
             } else {
-                if (statusEl) statusEl.innerText = '在线';
+                // 尝试从剩余消息中提取状态，以防格式不标准
+                for(let i=0; i<messagesArray.length; i++) {
+                    if (typeof messagesArray[i] === 'string' && messagesArray[i].includes('[状态:')) {
+                        let statusMatch = messagesArray[i].match(/\[状态:(.*?)\]/);
+                        if (statusMatch) {
+                            newStateStr = statusMatch[1].replace(']', '').trim();
+                            if (statusEl) statusEl.innerText = newStateStr;
+                            let prof = roleProfiles[currentActiveContactId] || {};
+                            prof.lastState = newStateStr;
+                            roleProfiles[currentActiveContactId] = prof;
+                            safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
+                            messagesArray[i] = messagesArray[i].replace(/\[状态:.*?\]/, '').trim();
+                        }
+                    }
+                }
+                if (!newStateStr && statusEl) statusEl.innerText = '在线';
             }
             if (statusDot) statusDot.style.backgroundColor = '#ccc';
+            
+            // 清理可能混在消息体里的残留标签
+            messagesArray = messagesArray.filter(m => m && m.trim().length > 0);
 
             const sendNextMessage = (index) => {
                 if (index >= messagesArray.length) {
+                    // 对话输出完毕后，统一更新一次心声
+                    let prof = roleProfiles[currentActiveContactId] || {};
+                    prof.lastInnerVoice = innerVoiceTextValue;
+                    roleProfiles[currentActiveContactId] = prof;
+                    safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
                     chatAiBtn.innerHTML = originalIcon;
                     chatAiBtn.disabled = false;
                     return;
@@ -673,11 +705,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 let msgText = messagesArray[index];
                 
-                // 将获取到的心声保存到本地或全局变量中，等待用户查看
-                let prof = roleProfiles[currentActiveContactId] || {};
-                prof.lastInnerVoice = innerVoiceTextValue;
-                roleProfiles[currentActiveContactId] = prof;
-                safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
+                // 去除可能遗漏的心声或状态标签
+                msgText = msgText.replace(/\[状态:.*?\]/g, '').replace(/\[心声:.*?\]/g, '').trim();
+                if (!msgText) {
+                    sendNextMessage(index + 1);
+                    return;
+                }
                 
                 if (boundStickers.length > 0) {
                     msgText = msgText.replace(/\[表情包:(.*?)\]/g, (match, name) => {
@@ -921,8 +954,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     convHeaderAvatar.addEventListener('click', () => {
-        innerVoiceBubble.style.display = 'block';
-        setTimeout(() => { innerVoiceBubble.style.display = 'none'; }, 2500);
+        const uploadContactAvatar = document.getElementById('upload-contact-avatar');
+        if(uploadContactAvatar) {
+            uploadContactAvatar.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                compressImage(file, 400, 400, 0.8, (dataUrl) => {
+                    if (dataUrl && currentActiveContactId) {
+                        const weiboAvatarImg = document.getElementById('weibo-avatar-img');
+                        if (weiboAvatarImg) weiboAvatarImg.style.backgroundImage = `url('${dataUrl}')`;
+                        
+                        const contactIndex = contacts.findIndex(c => c.id === currentActiveContactId);
+                        if(contactIndex !== -1) {
+                            contacts[contactIndex].avatar = dataUrl;
+                            localStorage.setItem('chat_contacts', JSON.stringify(contacts));
+                            renderMessages();
+                            renderContacts();
+                            renderChatList();
+                        }
+                    }
+                });
+            };
+            uploadContactAvatar.click();
+        }
     });
 
     // 角色详情页逻辑
