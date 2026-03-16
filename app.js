@@ -87,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatConversationPage = document.getElementById('chat-conversation-page');
     const convBackBtn = document.getElementById('conv-back-btn');
     const convMessagesContainer = document.getElementById('conv-messages-container');
+    const chatHeaderBgTrigger = document.getElementById('chat-header-bg-trigger');
     const convHeaderName = document.getElementById('conv-header-name');
     const convHeaderAvatar = document.getElementById('conv-header-avatar');
     const convMsgInput = document.getElementById('conv-msg-input');
@@ -443,8 +444,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalIcon = chatAiBtn.innerHTML;
         chatAiBtn.innerHTML = `<i class='bx bx-loader-alt spin'></i>`;
         chatAiBtn.disabled = true;
-        const statusEl = document.getElementById('conv-header-status');
+        const statusEl = document.getElementById('weibo-status');
+        const statusDot = document.getElementById('weibo-status-dot');
         if (statusEl) statusEl.innerText = '正在输入中...';
+        if (statusDot) statusDot.style.backgroundColor = '#ccc';
 
         const replyMin = profile.replyMin || 1;
         const replyMax = profile.replyMax || 4;
@@ -659,6 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 if (statusEl) statusEl.innerText = '在线';
             }
+            if (statusDot) statusDot.style.backgroundColor = '#ccc';
 
             const sendNextMessage = (index) => {
                 if (index >= messagesArray.length) {
@@ -835,7 +839,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const convHeaderTitleContainer = document.querySelector('.conv-header-title');
+    if (convHeaderTitleContainer) {
+        convHeaderTitleContainer.addEventListener('click', (e) => {
+            // Check if we're clicking the back button or its children
+            if (e.target.closest('#conv-back-btn')) {
+                return;
+            }
+            // If not, trigger the bg upload
+            const uploadConvBg = document.getElementById('upload-conv-bg');
+            if (uploadConvBg) uploadConvBg.click();
+        });
+    }
+
     // 微博卡片背景与文本持久化
+    if (chatHeaderBgTrigger) {
+        chatHeaderBgTrigger.addEventListener('click', (e) => {
+            const uploadConvBg = document.getElementById('upload-conv-bg');
+            if (uploadConvBg) uploadConvBg.click();
+        });
+    }
+
     const uploadConvBg = document.getElementById('upload-conv-bg');
     if (uploadConvBg) {
         uploadConvBg.addEventListener('change', (e) => {
@@ -1389,27 +1413,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let activeGroupId = stickerGroups[0].id;
+        for (let g of stickerGroups) {
+            if (g.stickers && g.stickers.length > 0) {
+                activeGroupId = g.id;
+                break;
+            }
+        }
 
         const renderGrid = (groupId) => {
             stickerDrawerGrid.innerHTML = '';
             const g = stickerGroups.find(x => x.id === groupId);
             if(!g || g.stickers.length === 0) return;
             g.stickers.forEach(s => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'sticker-item-wrapper';
                 const img = document.createElement('div');
                 img.className = 'sticker-img';
                 img.style.backgroundImage = `url('${s.url}')`;
-                img.addEventListener('click', () => {
+                wrapper.appendChild(img);
+                wrapper.addEventListener('click', () => {
                     // 发送带有 alt 标签的 img 标签，方便AI识别
                     sendMsg('me', `<img src="${s.url}" alt="[表情包:${s.name}]" style="max-width:120px; border-radius:8px;">`);
                     hideAllDrawers();
                 });
-                stickerDrawerGrid.appendChild(img);
+                stickerDrawerGrid.appendChild(wrapper);
             });
         };
 
         stickerGroups.forEach((group, index) => {
             const tab = document.createElement('div');
-            tab.className = `sticker-tab ${index === 0 ? 'active' : ''}`;
+            tab.className = `sticker-tab ${group.id === activeGroupId ? 'active' : ''}`;
             tab.innerText = group.name;
             tab.addEventListener('click', () => {
                 Array.from(stickerDrawerTabs.children).forEach(t => t.classList.remove('active'));
@@ -2725,6 +2758,18 @@ document.addEventListener('DOMContentLoaded', () => {
         momentsFeedPage.style.display = 'none';
     });
 
+    // 返回键防误触拦截 (聊天页)
+    const convTopBar = document.getElementById('conv-top-bar');
+    if (convTopBar) {
+        convTopBar.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'I' && e.target.tagName !== 'BUTTON' && !e.target.classList.contains('conv-back-btn')) {
+                // 点击背景其他地方
+                const weiboBgUpload = document.getElementById('upload-conv-bg');
+                if (weiboBgUpload) weiboBgUpload.click();
+            }
+        });
+    }
+
     // --- 朋友圈发布逻辑 ---
     let momentsData = JSON.parse(localStorage.getItem('moments_data') || '[]'); // [{id, authorId, text, images:[], time, comments:[]}]
     let postSelectedImages = [];
@@ -2887,6 +2932,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 const result = await response.json();
                 let commentText = result.choices[0].message.content.trim();
+                // Strip state tags if they exist
+                commentText = commentText.replace(/\[状态:.*?\]/g, '').trim();
                 
                 const mIndex = momentsData.findIndex(x => x.id === momentId);
                 if (mIndex !== -1) {
@@ -3068,18 +3115,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>`;
                 }
 
+                let likesHtml = '';
+                if (m.likes && m.likes.length > 0) {
+                    const lNames = m.likes.map(id => {
+                        if (id === 'user') {
+                            const lineData = JSON.parse(localStorage.getItem('line_profile_data') || '{}');
+                            return lineData.nickname || 'User';
+                        }
+                        const cc = contacts.find(x => x.id === id);
+                        return cc ? cc.name : 'Unknown';
+                    }).join(', ');
+                    likesHtml = `<div class="moment-likes-area"><i class='bx bx-heart'></i> ${lNames}</div>`;
+                }
+
                 let commentsHtml = '';
                 if (m.comments && m.comments.length > 0) {
-                    const cList = m.comments.map(c => {
+                    const cList = m.comments.map((c, cIdx) => {
                         let cName = 'User';
                         if (c.authorId !== 'user') {
                             const cc = contacts.find(x => x.id === c.authorId);
                             if (cc) cName = cc.name;
                         }
-                        return `<div class="moment-comment-item"><span class="moment-comment-name">${cName}:</span>${c.text}</div>`;
+                        let replyHtml = '';
+                        if (c.replyTo) {
+                            let rName = 'User';
+                            if (c.replyTo !== 'user') {
+                                const rc = contacts.find(x => x.id === c.replyTo);
+                                if (rc) rName = rc.name;
+                            }
+                            replyHtml = ` 回复 <span class="moment-comment-name">${rName}</span>`;
+                        }
+                        return `<div class="moment-comment-item" onclick="replyToComment('${m.id}', ${cIdx}, '${c.authorId}', '${cName}')"><span class="moment-comment-name">${cName}</span>${replyHtml}: ${c.text}</div>`;
                     }).join('');
                     commentsHtml = `<div class="moment-comments-area">${cList}</div>`;
                 }
+                
+                let isLiked = m.likes && m.likes.includes('user');
 
                 card.innerHTML = `
                     <div class="moment-avatar" style="background-image: url('${authorAvatar}')"></div>
@@ -3091,15 +3162,107 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${m.text ? `<div class="moment-text">${m.text.replace(/\n/g, '<br>')}</div>` : ''}
                         ${imgHtml}
                         <div class="moment-actions">
-                            <button class="moment-action-btn"><i class='bx bx-message-rounded'></i> 评论</button>
-                            <button class="moment-action-btn"><i class='bx bx-heart'></i> 点赞</button>
+                            <button class="moment-action-btn" onclick="addComment('${m.id}')"><i class='bx bx-message-rounded'></i> 评论</button>
+                            <button class="moment-action-btn" style="color: ${isLiked ? '#ff3b30' : '#576b95'};" onclick="toggleLike('${m.id}')"><i class='bx ${isLiked ? 'bxs-heart' : 'bx-heart'}'></i> 点赞</button>
                             <button class="moment-action-btn" style="margin-left: auto; color: #ff3b30;" onclick="deleteMoment(${idx}, event)"><i class='bx bx-trash'></i></button>
                         </div>
+                        ${likesHtml}
                         ${commentsHtml}
                     </div>
                 `;
                 container.appendChild(card);
             });
+        }
+    }
+    
+    window.toggleLike = function(momentId) {
+        const m = momentsData.find(x => x.id === momentId);
+        if (m) {
+            if (!m.likes) m.likes = [];
+            const idx = m.likes.indexOf('user');
+            if (idx === -1) m.likes.push('user');
+            else m.likes.splice(idx, 1);
+            safeSetItem('moments_data', JSON.stringify(momentsData));
+            renderMomentsFeed();
+        }
+    };
+    
+    window.addComment = function(momentId) {
+        const text = prompt('请输入评论内容:');
+        if (text && text.trim()) {
+            const m = momentsData.find(x => x.id === momentId);
+            if (m) {
+                if (!m.comments) m.comments = [];
+                m.comments.push({ authorId: 'user', text: text.trim() });
+                safeSetItem('moments_data', JSON.stringify(momentsData));
+                renderMomentsFeed();
+                
+                if (m.authorId !== 'user') {
+                    setTimeout(() => triggerAICommentReply(m.id, m.authorId, text.trim()), 2000);
+                }
+            }
+        }
+    };
+    
+    window.replyToComment = function(momentId, commentIdx, targetAuthorId, targetAuthorName) {
+        if (targetAuthorId === 'user') return;
+        const text = prompt(`回复 ${targetAuthorName}:`);
+        if (text && text.trim()) {
+            const m = momentsData.find(x => x.id === momentId);
+            if (m) {
+                if (!m.comments) m.comments = [];
+                m.comments.push({ authorId: 'user', text: text.trim(), replyTo: targetAuthorId });
+                safeSetItem('moments_data', JSON.stringify(momentsData));
+                renderMomentsFeed();
+                
+                setTimeout(() => triggerAICommentReply(m.id, targetAuthorId, text.trim()), 2000);
+            }
+        }
+    };
+
+    async function triggerAICommentReply(momentId, roleId, userText) {
+        const cInfo = contacts.find(x => x.id === roleId);
+        if (!cInfo) return;
+
+        const apiData = JSON.parse(localStorage.getItem('api_settings') || '{}');
+        if (!apiData.url || !apiData.key || !apiData.modelName) return;
+
+        const sysPrompt = `你扮演角色：${cInfo.name}。人设：${cInfo.desc || '无'}。在朋友圈里，User对你说：“${userText}”。请你作为${cInfo.name}，回复一条简短的评论。只输出评论内容，不要多余说明。`;
+
+        try {
+            let url = apiData.url;
+            if (url.endsWith('/')) url = url.slice(0, -1);
+            if (!url.endsWith('/chat/completions')) url += '/chat/completions';
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiData.key}` },
+                body: JSON.stringify({
+                    model: apiData.modelName,
+                    messages: [{ role: 'system', content: sysPrompt }]
+                })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                let commentText = result.choices[0].message.content.trim();
+                // Strip state tags if they exist
+                commentText = commentText.replace(/\[状态:.*?\]/g, '').trim();
+                
+                const mIndex = momentsData.findIndex(x => x.id === momentId);
+                if (mIndex !== -1) {
+                    if (!momentsData[mIndex].comments) momentsData[mIndex].comments = [];
+                    momentsData[mIndex].comments.push({
+                        authorId: roleId,
+                        text: commentText,
+                        replyTo: 'user'
+                    });
+                    safeSetItem('moments_data', JSON.stringify(momentsData));
+                    renderMomentsFeed();
+                }
+            }
+        } catch (error) {
+            console.error('AI reply failed', error);
         }
     }
 

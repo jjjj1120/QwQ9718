@@ -380,7 +380,8 @@
                 <label for="upload-conv-bottom-bg" class="weibo-bottom-bg-upload"><div class="weibo-bottom-bg" id="weibo-bottom-bg-img"></div></label>
                 
                 <div class="weibo-actions">
-                    <button class="weibo-icon-btn" id="conv-back-btn"><i class='bx bx-chevron-left'></i></button>
+                    <div style="position: absolute; left: 0; top: 0; width: 60px; height: 60px; pointer-events: auto;" onclick="document.getElementById('conv-back-btn').click()"></div>
+                    <button class="weibo-icon-btn" id="conv-back-btn" style="position: relative; z-index: 2;"><i class='bx bx-chevron-left'></i></button>
                     <div class="weibo-actions-right">
                         <button class="weibo-icon-btn" id="weibo-search-btn"><i class='bx bx-search'></i></button>
                         <button class="weibo-icon-btn" id="conv-profile-btn"><i class='bx bx-cog'></i></button>
@@ -740,6 +741,10 @@
 
     <!-- 真正的朋友圈动态流页面 (推特风格) -->
     <div id="moments-feed-page">
+        <div id="mf-comment-bar" style="display: none; position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(245,245,245,0.95); backdrop-filter: blur(10px); border-top: 1px solid #eaeaea; padding: 10px 15px; z-index: 200; align-items: center; gap: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom, 20px));">
+            <input type="text" id="mf-comment-input" style="flex: 1; border: none; border-radius: 20px; padding: 8px 15px; outline: none; font-size: 14px; background: #fff; border: 1px solid #ddd;" placeholder="评论...">
+            <button id="mf-comment-send" class="save-btn" style="border-radius: 20px; padding: 6px 15px;">发送</button>
+        </div>
         <header class="mf-header">
             <button class="back-btn" id="close-mf-btn"><i class='bx bx-chevron-left'></i></button>
             <div class="mf-title">
