@@ -337,6 +337,20 @@ let contextMsgCounts = JSON.parse(localStorage.getItem('chat_context_msg_counts'
         }
     });
 
+    if (chatStarBtn) {
+        chatStarBtn.addEventListener('click', () => {
+            if(chatDrawerStar && chatDrawerStar.classList.contains('active')) {
+                hideAllDrawers();
+            } else {
+                hideAllDrawers();
+                if(chatDrawerStar) chatDrawerStar.classList.add('active');
+                chatStarBtn.classList.add('active');
+                if (window.renderGiftDrawer) window.renderGiftDrawer();
+                if (convMessagesContainer) convMessagesContainer.scrollTop = convMessagesContainer.scrollHeight;
+            }
+        });
+    }
+
     // 相册上传逻辑
     const uploadChatImage = document.getElementById('upload-chat-image');
     if (uploadChatImage) {
@@ -459,7 +473,7 @@ let systemPrompt = `你扮演角色：${contact.name}。
   "[状态:你的状态(带颜文字)]",
   "第一条极短的口语化消息",
   "第二条消息(可选)",
-  "[心声:[生理反应: xxx][色色内容/日常: xxx][行动: xxx]]"
+  "[心声:[生理反应: xxx][色色想法: xxx 或 日常想法: xxx][行动: xxx]]"
 ]
 注意：
 1. 数组的第一个元素必须是形如 [状态:当前中文状态带颜文字] 的字符串！
@@ -468,7 +482,9 @@ let systemPrompt = `你扮演角色：${contact.name}。
 4. 如果你想发语音，可以使用格式 [语音:内容:时长秒数]（如：[语音:你好呀:3]）。
 5. 如果你想主动转账给用户，可以使用格式 [转账:金额]（如：[转账:520]）。
 6. 如果你想发送图片，请发送格式为 [发送图片:具体的英文画面描述] 的消息。
-7. 关于[色色内容/日常: xxx]：角色必须根据当下对话场景来展露想法，不一定每一轮都是黄色内容。有时候也可以是觉得她好可爱想抱抱等日常想法。
+7. 心声必须严格包含【生理反应】、【行动】以及【想法】三个部分！
+8. 关于想法部分，请根据对话场景决定输出 [色色想法: xxx] 还是 [日常想法: xxx] （只能选其一作为标签输出）。
+9. 强烈要求：心声内容必须采用角色第一人称描述，深度剖析角色表面话语之下的真实心理、隐秘欲望和情感波动，要有窥探到角色内心最深处的窥视感，绝不可浅尝辄止。
 `;
         if (profile.userPersona) systemPrompt += `\n【用户人设】\n${profile.userPersona}\n`;
         if (profile.userHabits) systemPrompt += `\n【用户习惯/喜好/备忘】\n${profile.userHabits}\n`;
@@ -820,13 +836,19 @@ let systemPrompt = `你扮演角色：${contact.name}。
         };
 
         const physiological = parseSection('生理反应', text);
-        const thoughts = parseSection('色色内容/日常', text) || parseSection('想法', text) || parseSection('色色想法', text); // 兼容旧格式
+        const eroticThoughts = parseSection('色色想法', text);
+        const dailyThoughts = parseSection('日常想法', text);
+        const oldThoughts = parseSection('想法', text) || parseSection('色色内容/日常', text);
+        
+        let thoughts = eroticThoughts || dailyThoughts || oldThoughts;
+        let thoughtsTitle = eroticThoughts ? 'Erotic Thoughts (色色想法)' : (dailyThoughts ? 'Daily Thoughts (日常想法)' : 'Inner Thoughts (内心想法)');
+        
         const action = parseSection('行动', text);
 
         if (physiological || thoughts || action) {
             let html = '';
-            if (physiological) html += `<div style="background: rgba(255,105,180,0.1); border-left: 3px solid #ff69b4; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #ff69b4; display: block; margin-bottom: 4px; font-size: 11px;">Physiological (生理)</strong>${physiological}</div>`;
-            if (thoughts) html += `<div style="background: rgba(147,112,219,0.1); border-left: 3px solid #9370db; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #9370db; display: block; margin-bottom: 4px; font-size: 11px;">Inner Thoughts (色色内容/日常)</strong>${thoughts}</div>`;
+            if (physiological) html += `<div style="background: rgba(255,105,180,0.1); border-left: 3px solid #ff69b4; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #ff69b4; display: block; margin-bottom: 4px; font-size: 11px;">Physiological (生理反应)</strong>${physiological}</div>`;
+            if (thoughts) html += `<div style="background: rgba(147,112,219,0.1); border-left: 3px solid #9370db; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #9370db; display: block; margin-bottom: 4px; font-size: 11px;">${thoughtsTitle}</strong>${thoughts}</div>`;
             if (action) html += `<div style="background: rgba(30,144,255,0.1); border-left: 3px solid #1e90ff; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333;"><strong style="color: #1e90ff; display: block; margin-bottom: 4px; font-size: 11px;">Action (行动)</strong>${action}</div>`;
             innerVoiceText.innerHTML = html;
         } else {
@@ -869,7 +891,7 @@ let systemPrompt = `你扮演角色：${contact.name}。
                 return;
             }
             
-            const sysPrompt = `你扮演角色：${contact.name}。人设：${contact.desc || '无'}。请输出你此刻内心的真实想法。必须严格按照格式输出：[心声:[生理反应: xxx][色色内容/日常: xxx][行动: xxx]]。不要有任何多余的开头结尾。注意：[色色内容/日常]意思是角色根据当下对话场景来展露想法，不一定每一轮都是黄色内容。有时候也可以是觉得她好可爱想抱抱等日常想法。`;
+            const sysPrompt = `你扮演角色：${contact.name}。人设：${contact.desc || '无'}。请输出你此刻内心的真实想法。必须严格按照格式输出：[心声:[生理反应: xxx][色色想法: xxx 或 日常想法: xxx][行动: xxx]]。不要有任何多余的开头结尾。要求：1. 想法部分根据场景决定输出标签 [色色想法: ...] 或 [日常想法: ...]。2. 心声内容必须采用角色第一人称描述，深度剖析表面话语之下的真实心理和隐秘欲望，要有一种窥探内心深处的感觉，绝不能浅显。`;
             
             try {
                 let url = apiData.url;
@@ -1079,7 +1101,7 @@ let systemPrompt = `你扮演角色：${contact.name}。
 
         rpUserPersona.value = profile.userPersona || '';
         const ccElVal = document.getElementById('rp-custom-css');
-        rpUserHabits.value = profile.userHabits || '';
+        if (rpUserHabits) rpUserHabits.value = profile.userHabits || '';
         if (ccElVal) ccElVal.value = profile.customCss || '';
         if (profile.userAvatar) {
             document.getElementById('rp-user-avatar-preview').style.backgroundImage = `url('${profile.userAvatar}')`;
@@ -1233,7 +1255,7 @@ let systemPrompt = `你扮演角色：${contact.name}。
         if (taElSave) profile.timeAware = taElSave.checked;
         profile.userPersona = rpUserPersona.value.trim();
         const ccElSave = document.getElementById('rp-custom-css');
-        profile.userHabits = rpUserHabits.value.trim();
+        if (rpUserHabits) profile.userHabits = rpUserHabits.value.trim();
         if (ccElSave) profile.customCss = ccElSave.value;
         
         roleProfiles[currentActiveContactId] = profile;
