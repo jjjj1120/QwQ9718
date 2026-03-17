@@ -4,6 +4,402 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log("扩展功能模块已成功加载！当前消息数据:", window.ChatApp.messagesData);
 
+    // 自动触发总结函数暴露给 app.js
+    window.triggerAutoMemorySummary = async function(contactId, startIndex, currentTotalMsgs) {
+        let messagesData = JSON.parse(localStorage.getItem('chat_messages') || '{}');
+        let msgs = messagesData[contactId] || [];
+        
+        let end = currentTotalMsgs;
+        if (end <= startIndex) return;
+
+        const sliceMsgs = msgs.slice(startIndex, end);
+        if (sliceMsgs.length === 0) return;
+
+        let conversationText = sliceMsgs.map(m => {
+            let senderName = m.sender === 'me' ? 'User' : '角色';
+            let cleanText = m.text.replace(/\[状态:.*?\]/g, '').replace(/\[心声:.*?\]/g, '');
+            return `${senderName}: ${cleanText}`;
+        }).join('\n');
+
+        const apiData = JSON.parse(localStorage.getItem('api_settings') || '{}');
+        if (!apiData.url || !apiData.key || !apiData.modelName) return;
+
+        const summaryPrompt = `请根据以下聊天记录，写一段详细的总结。
+【要求】
+1. 不要过度概括，尽可能详细的展示重要事件、发生的事情。
+2. 捕捉用户的小习惯、喜好、情感变化。
+3. 情感记忆不要过度冰冷的叙述，要用有温度的语言。
+4. 输出纯文本总结，不需要任何格式化或前缀。
+【聊天记录】
+${conversationText}`;
+
+        try {
+            let url = apiData.url;
+            if (url.endsWith('/')) url = url.slice(0, -1);
+            if (!url.endsWith('/chat/completions')) url += '/chat/completions';
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiData.key}` },
+                body: JSON.stringify({
+                    model: apiData.modelName,
+                    messages: [{ role: 'system', content: summaryPrompt }]
+                })
+            });
+
+            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+            const result = await response.json();
+            let summaryText = result.choices[0].message.content.trim();
+
+            let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+            if (!chatMemories[contactId]) chatMemories[contactId] = [];
+            
+            chatMemories[contactId].push({
+                id: 'mem_' + Date.now(),
+                text: summaryText,
+                fromIndex: startIndex,
+                toIndex: end,
+                time: Date.now()
+            });
+            
+            localStorage.setItem('chat_memories', JSON.stringify(chatMemories));
+            console.log(`自动总结完成: [${startIndex} - ${end}]`);
+        } catch (error) {
+            console.error('自动总结失败:', error);
+        }
+    };
+
+    // ==========================================
+    // 0. 记忆库 (Memory System) 逻辑
+    // ==========================================
+    const memorySystemPage = document.getElementById('memory-system-page');
+    const closeMemoryBtn = document.getElementById('close-memory-btn');
+    const drawerBtnMemory = document.getElementById('drawer-btn-memory');
+    const memTabs = document.querySelectorAll('.mem-tab-item');
+    const memPanels = document.querySelectorAll('.mem-view-panel');
+    
+    // 设置项
+    const memContextLimit = document.getElementById('mem-context-limit');
+    const memInjectionLimit = document.getElementById('mem-injection-limit');
+    const memAutoSummarySwitch = document.getElementById('mem-auto-summary-switch');
+    const memAutoThreshold = document.getElementById('mem-auto-threshold');
+    const memSaveSettingsBtn = document.getElementById('mem-save-settings-btn');
+    
+    // 习惯集
+    const memUserHabits = document.getElementById('mem-user-habits');
+    const memSaveHabitsBtn = document.getElementById('mem-save-habits-btn');
+    
+    // 回忆录
+    const memManualSummaryBtn = document.getElementById('mem-manual-summary-btn');
+    const memManualModal = document.getElementById('mem-manual-modal');
+    const closeMemManualBtn = document.getElementById('close-mem-manual-btn');
+    const memStartIndex = document.getElementById('mem-start-index');
+    const memEndIndex = document.getElementById('mem-end-index');
+    const memTotalCount = document.getElementById('mem-total-count');
+    const memGenerateBtn = document.getElementById('mem-generate-btn');
+    const memListContainer = document.getElementById('mem-list-container');
+    const memEmptyState = document.getElementById('mem-empty-state');
+
+    // 工具函数：获取当前联系人ID
+    const getCurrentContactId = () => {
+        // 从 app.js 中尝试获取
+        // 由于 features.js 在 app.js 后执行，但作用域隔离，我们需要通过一些方式通信
+        // app.js 已经暴露了 window.ChatApp (我们在前面修改中已经加上了)
+        // 实际上没有，让我们通过一种hack方式或者依赖 app.js 暴露
+        // 检查 dom 元素
+        const contactId = window.currentActiveContactId_global || null; 
+        return contactId;
+    };
+    
+    // 我们需要在 app.js 中暴露出 currentActiveContactId，在 app.js 的末尾或者合适地方
+    // 让我们先写个通用的从 localStorage 中读数据的逻辑，或者通过事件
+    // 这里我们假设我们在 features.js 中可以获取到当前打开聊天的对象
+    // 通过判断DOM显示状态？比较麻烦。
+    // 这里先挂载一个方法到 window.ChatApp
+
+    // 抽屉入口点击事件
+    if (drawerBtnMemory) {
+        drawerBtnMemory.addEventListener('click', () => {
+            if (window.ChatApp && window.ChatApp.hideAllDrawers) {
+                window.ChatApp.hideAllDrawers();
+            }
+            if (!window.ChatApp || !window.ChatApp.currentActiveContactId) {
+                // 如果没有挂载，我们尝试自己找
+                alert('获取当前联系人失败，请重新进入聊天');
+                return;
+            }
+            
+            // 加载当前联系人的记忆数据
+            loadMemoryData(window.ChatApp.currentActiveContactId);
+            memorySystemPage.style.display = 'flex';
+        });
+    }
+
+    if (closeMemoryBtn) {
+        closeMemoryBtn.addEventListener('click', () => {
+            memorySystemPage.style.display = 'none';
+        });
+    }
+
+    // Tab 切换
+    memTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            memTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const target = tab.dataset.target;
+            memPanels.forEach(p => {
+                if (p.id === `mem-view-${target}`) {
+                    p.classList.add('active');
+                } else {
+                    p.classList.remove('active');
+                }
+            });
+        });
+    });
+
+    function loadMemoryData(contactId) {
+        // 加载设置
+        let contextLimits = JSON.parse(localStorage.getItem('chat_context_limits') || '{}');
+        let injectLimits = JSON.parse(localStorage.getItem('chat_mem_inject_limits') || '{}');
+        let autoEnabled = JSON.parse(localStorage.getItem('chat_auto_mem_enabled') || '{}');
+        let autoThresholds = JSON.parse(localStorage.getItem('chat_auto_mem_thresholds') || '{}');
+        
+        memContextLimit.value = contextLimits[contactId] || 20;
+        memInjectionLimit.value = injectLimits[contactId] !== undefined ? injectLimits[contactId] : 5;
+        memAutoSummarySwitch.checked = autoEnabled[contactId] || false;
+        memAutoThreshold.value = autoThresholds[contactId] || 100;
+        
+        // 加载习惯
+        let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
+        let profile = roleProfiles[contactId] || {};
+        memUserHabits.value = profile.userHabits || '';
+        
+        // 加载记忆列表
+        renderMemoryList(contactId);
+    }
+
+    // 保存设置
+    if (memSaveSettingsBtn) {
+        memSaveSettingsBtn.addEventListener('click', () => {
+            const contactId = window.ChatApp?.currentActiveContactId;
+            if (!contactId) return;
+            
+            let contextLimits = JSON.parse(localStorage.getItem('chat_context_limits') || '{}');
+            let injectLimits = JSON.parse(localStorage.getItem('chat_mem_inject_limits') || '{}');
+            let autoEnabled = JSON.parse(localStorage.getItem('chat_auto_mem_enabled') || '{}');
+            let autoThresholds = JSON.parse(localStorage.getItem('chat_auto_mem_thresholds') || '{}');
+            
+            contextLimits[contactId] = parseInt(memContextLimit.value) || 20;
+            injectLimits[contactId] = parseInt(memInjectionLimit.value) || 5;
+            autoEnabled[contactId] = memAutoSummarySwitch.checked;
+            autoThresholds[contactId] = parseInt(memAutoThreshold.value) || 100;
+            
+            localStorage.setItem('chat_context_limits', JSON.stringify(contextLimits));
+            localStorage.setItem('chat_mem_inject_limits', JSON.stringify(injectLimits));
+            localStorage.setItem('chat_auto_mem_enabled', JSON.stringify(autoEnabled));
+            localStorage.setItem('chat_auto_mem_thresholds', JSON.stringify(autoThresholds));
+            
+            alert('记忆设置已保存！');
+        });
+    }
+
+    // 保存习惯
+    if (memSaveHabitsBtn) {
+        memSaveHabitsBtn.addEventListener('click', () => {
+            const contactId = window.ChatApp?.currentActiveContactId;
+            if (!contactId) return;
+            
+            let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
+            let profile = roleProfiles[contactId] || {};
+            profile.userHabits = memUserHabits.value.trim();
+            roleProfiles[contactId] = profile;
+            localStorage.setItem('chat_role_profiles', JSON.stringify(roleProfiles));
+            
+            alert('习惯集已保存！');
+        });
+    }
+
+    // 手动生成弹窗
+    if (memManualSummaryBtn) {
+        memManualSummaryBtn.addEventListener('click', () => {
+            const contactId = window.ChatApp?.currentActiveContactId;
+            if (!contactId) return;
+            
+            let messagesData = JSON.parse(localStorage.getItem('chat_messages') || '{}');
+            let msgs = messagesData[contactId] || [];
+            
+            memTotalCount.innerText = msgs.length;
+            memStartIndex.value = Math.max(0, msgs.length - 100);
+            memEndIndex.value = msgs.length;
+            
+            memManualModal.style.display = 'flex';
+        });
+    }
+
+    if (closeMemManualBtn) {
+        closeMemManualBtn.addEventListener('click', () => {
+            memManualModal.style.display = 'none';
+        });
+    }
+
+    // 执行总结
+    if (memGenerateBtn) {
+        memGenerateBtn.addEventListener('click', async () => {
+            const contactId = window.ChatApp?.currentActiveContactId;
+            if (!contactId) return;
+            
+            let start = parseInt(memStartIndex.value) || 0;
+            let end = parseInt(memEndIndex.value) || 0;
+            
+            if (start < 0) start = 0;
+            if (end <= start) {
+                alert('结束层数必须大于起始层数');
+                return;
+            }
+
+            let messagesData = JSON.parse(localStorage.getItem('chat_messages') || '{}');
+            let msgs = messagesData[contactId] || [];
+            if (end > msgs.length) end = msgs.length;
+            
+            const sliceMsgs = msgs.slice(start, end);
+            if (sliceMsgs.length === 0) {
+                alert('该区间没有消息记录');
+                return;
+            }
+
+            // 构造对话文本
+            let conversationText = sliceMsgs.map(m => {
+                let senderName = m.sender === 'me' ? 'User' : '角色';
+                // 简单剔除系统标签
+                let cleanText = m.text.replace(/\[状态:.*?\]/g, '').replace(/\[心声:.*?\]/g, '');
+                return `${senderName}: ${cleanText}`;
+            }).join('\n');
+
+            const apiData = JSON.parse(localStorage.getItem('api_settings') || '{}');
+            if (!apiData.url || !apiData.key || !apiData.modelName) {
+                alert('请先在设置中配置API，才能生成总结。');
+                return;
+            }
+
+            const originalText = memGenerateBtn.innerText;
+            memGenerateBtn.innerText = '正在生成回忆...';
+            memGenerateBtn.disabled = true;
+
+            const summaryPrompt = `请根据以下聊天记录，写一段详细的总结。
+【要求】
+1. 不要过度概括，尽可能详细的展示重要事件、发生的事情。
+2. 捕捉用户的小习惯、喜好、情感变化。
+3. 情感记忆不要过度冰冷的叙述，要用有温度的语言。
+4. 输出纯文本总结，不需要任何格式化或前缀。
+【聊天记录】
+${conversationText}`;
+
+            try {
+                let url = apiData.url;
+                if (url.endsWith('/')) url = url.slice(0, -1);
+                if (!url.endsWith('/chat/completions')) url += '/chat/completions';
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiData.key}` },
+                    body: JSON.stringify({
+                        model: apiData.modelName,
+                        messages: [{ role: 'system', content: summaryPrompt }]
+                    })
+                });
+
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                const result = await response.json();
+                let summaryText = result.choices[0].message.content.trim();
+
+                // 保存到记忆库
+                let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+                if (!chatMemories[contactId]) chatMemories[contactId] = [];
+                
+                chatMemories[contactId].push({
+                    id: 'mem_' + Date.now(),
+                    text: summaryText,
+                    fromIndex: start,
+                    toIndex: end,
+                    time: Date.now()
+                });
+                
+                localStorage.setItem('chat_memories', JSON.stringify(chatMemories));
+                
+                renderMemoryList(contactId);
+                memManualModal.style.display = 'none';
+                alert('记忆总结已生成！');
+
+            } catch (error) {
+                console.error('总结失败:', error);
+                alert('生成失败: ' + error.message);
+            } finally {
+                memGenerateBtn.innerText = originalText;
+                memGenerateBtn.disabled = false;
+            }
+        });
+    }
+
+    // 渲染记忆列表
+    function renderMemoryList(contactId) {
+        let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+        let memories = chatMemories[contactId] || [];
+        
+        memListContainer.innerHTML = '';
+        
+        if (memories.length === 0) {
+            memEmptyState.style.display = 'block';
+        } else {
+            memEmptyState.style.display = 'none';
+            // 倒序展示，最新的在上面
+            memories.slice().reverse().forEach((mem, reverseIndex) => {
+                let actualIndex = memories.length - 1 - reverseIndex;
+                const card = document.createElement('div');
+                card.className = 'mem-card';
+                
+                const d = new Date(mem.time);
+                const timeStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                
+                card.innerHTML = `
+                    <div class="mem-card-header">
+                        <div class="mem-card-meta">层数: ${mem.fromIndex} - ${mem.toIndex}</div>
+                        <div class="mem-card-date">${timeStr}</div>
+                    </div>
+                    <div class="mem-card-content" id="mem-content-${mem.id}" contenteditable="true" spellcheck="false">${mem.text}</div>
+                    <div class="mem-card-actions">
+                        <button class="mem-action-btn delete-btn" data-id="${mem.id}" data-index="${actualIndex}"><i class='bx bx-trash'></i> 删除</button>
+                    </div>
+                `;
+                
+                memListContainer.appendChild(card);
+
+                // 内容失焦保存
+                const contentEl = card.querySelector(`#mem-content-${mem.id}`);
+                contentEl.addEventListener('blur', () => {
+                    let freshMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+                    if (freshMemories[contactId] && freshMemories[contactId][actualIndex]) {
+                        freshMemories[contactId][actualIndex].text = contentEl.innerText.trim();
+                        localStorage.setItem('chat_memories', JSON.stringify(freshMemories));
+                    }
+                });
+
+                // 删除按钮
+                const delBtn = card.querySelector('.delete-btn');
+                delBtn.addEventListener('click', () => {
+                    if (confirm('确定要删除这段记忆吗？删除后将不再注入给AI。')) {
+                        let freshMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+                        if (freshMemories[contactId]) {
+                            freshMemories[contactId].splice(actualIndex, 1);
+                            localStorage.setItem('chat_memories', JSON.stringify(freshMemories));
+                            renderMemoryList(contactId);
+                        }
+                    }
+                });
+            });
+        }
+    }
+
+
     // ==========================================
     // 1. 数据导出与导入功能
     // ==========================================

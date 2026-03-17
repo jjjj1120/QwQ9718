@@ -394,7 +394,7 @@
                     </div>
                     <div class="weibo-info-text">
                         <div class="weibo-name-row">
-                            <span class="weibo-name" id="conv-header-name">名字</span>
+                            <span class="weibo-name" id="conv-header-name" contenteditable="true" spellcheck="false" style="outline:none;">名字</span>
                             <i class='bx bx-male-sign weibo-gender'></i>
                             <span class="weibo-vip"><i class='bx bxs-crown'></i> 开通</span>
                         </div>
@@ -485,6 +485,10 @@
                         <div class="feature-icon"><i class='bx bx-refresh'></i></div>
                         <span class="feature-text">重试回复</span>
                     </div>
+                    <div class="feature-item" id="drawer-btn-memory">
+                        <div class="feature-icon"><i class='bx bx-brain'></i></div>
+                        <span class="feature-text">记忆库</span>
+                    </div>
                 </div>
             </div>
             
@@ -550,19 +554,11 @@
                         <span class="slider"></span>
                     </label>
                 </div>
+                <!-- 移除了自动总结开关和记忆内容框，将这些功能迁移至记忆库 -->
+                <input type="checkbox" id="rp-auto-memory" style="display:none">
+                <textarea id="rp-memory-content" style="display:none"></textarea>
             </div>
             
-            <div class="rp-card">
-                <span class="rp-section-title">总结记忆库</span>
-                <div class="rp-toggle-row">
-                    <span class="rp-toggle-label">自动总结记忆</span>
-                    <label class="switch">
-                        <input type="checkbox" id="rp-auto-memory">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <textarea class="rp-textarea" id="rp-memory-content" rows="4" placeholder="记忆会存储在这里，也可以手动输入..."></textarea>
-            </div>
             
             <div class="rp-card">
                 <span class="rp-section-title">User人设</span>
@@ -967,6 +963,111 @@
                 <div class="jar-highlight"></div>
             </div>
             <div class="bottle-count-display">已收集: <span id="bottle-star-count">0</span></div>
+        </div>
+    </div>
+
+    <!-- 记忆系统全屏页面 -->
+    <div id="memory-system-page">
+        <header class="wb-header">
+            <button class="back-btn" id="close-memory-btn"><i class='bx bx-chevron-left'></i></button>
+            <h2 style="font-size: 16px;">记忆系统</h2>
+            <div style="width: 24px;"></div>
+        </header>
+        
+        <div class="mem-tabs-header">
+            <div class="mem-tab-item active" data-target="memories">回忆录</div>
+            <div class="mem-tab-item" data-target="habits">习惯集</div>
+            <div class="mem-tab-item" data-target="settings">设置</div>
+        </div>
+
+        <div class="mem-content-area">
+            <!-- 标签页1: 回忆录 -->
+            <div id="mem-view-memories" class="mem-view-panel active">
+                <div class="mem-actions-bar">
+                    <button class="save-btn" id="mem-manual-summary-btn" style="background:#333; color:#fff; width:100%; padding:12px; border-radius:12px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                        <i class='bx bx-plus-circle'></i> 手动生成总结
+                    </button>
+                </div>
+                <div class="mem-list" id="mem-list-container">
+                    <!-- Memory Cards Injected Here -->
+                    <div class="empty-state" id="mem-empty-state" style="padding: 40px 0; text-align: center; color: #aaa;">
+                        <i class='bx bx-book-heart' style="font-size: 48px; margin-bottom: 10px;"></i>
+                        <p>暂无记忆，去聊聊天或手动总结吧</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 标签页2: 习惯集 -->
+            <div id="mem-view-habits" class="mem-view-panel">
+                <div class="mem-notebook-container">
+                    <div class="mem-notebook-header">User Habits & Preferences</div>
+                    <textarea id="mem-user-habits" class="mem-notebook-textarea" placeholder="记录用户的喜好、习惯、禁忌等... (例如: 喜欢喝冰美式，半夜容易醒)"></textarea>
+                    <div style="text-align: right; margin-top: 10px;">
+                        <button class="save-btn" id="mem-save-habits-btn">保存修改</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 标签页3: 设置 -->
+            <div id="mem-view-settings" class="mem-view-panel">
+                <div class="rp-card">
+                    <span class="rp-section-title">AI 读取设置</span>
+                    <div class="api-input-group">
+                        <label>读取上下文条数 (Context Limit)</label>
+                        <input type="number" id="mem-context-limit" value="20" min="1">
+                        <small style="color:#888; font-size:11px;">发送给 AI 的历史消息数量，过多可能导致遗忘或 Token 溢出。</small>
+                    </div>
+                    <div class="api-input-group" style="margin-top:15px;">
+                        <label>注入记忆条数 (Injection Limit)</label>
+                        <input type="number" id="mem-injection-limit" value="5" min="0">
+                        <small style="color:#888; font-size:11px;">每次对话从回忆录中提取的最新记忆数量。</small>
+                    </div>
+                </div>
+
+                <div class="rp-card" style="margin-top: 20px;">
+                    <span class="rp-section-title">自动总结设置</span>
+                    <div class="rp-toggle-row">
+                        <span class="rp-toggle-label">启用自动总结</span>
+                        <label class="switch">
+                            <input type="checkbox" id="mem-auto-summary-switch">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="api-input-group" style="margin-top:15px;">
+                        <label>触发阈值 (条数)</label>
+                        <input type="number" id="mem-auto-threshold" value="100" min="10">
+                        <small style="color:#888; font-size:11px;">每隔多少条对话自动触发一次总结。</small>
+                    </div>
+                    <button class="save-btn" id="mem-save-settings-btn" style="margin-top: 20px; width: 100%;">保存设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动总结弹窗 -->
+    <div id="mem-manual-modal" class="ui-modal-overlay">
+        <div style="flex-grow: 1;" class="ui-modal-bg"></div>
+        <div class="ui-popup-card">
+            <div class="tp-header">
+                <button id="close-mem-manual-btn"><i class='bx bx-x'></i></button>
+                <span>手动生成总结</span>
+                <div style="width:28px;"></div>
+            </div>
+            
+            <div class="api-input-group">
+                <label>起始层数 (Start Index)</label>
+                <input type="number" id="mem-start-index" placeholder="0">
+            </div>
+            <div class="api-input-group" style="margin-top: 15px;">
+                <label>结束层数 (End Index)</label>
+                <input type="number" id="mem-end-index" placeholder="当前最大层数">
+            </div>
+            
+            <div style="margin-top: 15px; font-size: 12px; color: #666; background: #f5f5f5; padding: 10px; border-radius: 8px;">
+                当前对话总条数: <span id="mem-total-count" style="font-weight:bold;">0</span>
+            </div>
+
+            <button class="tp-submit-btn" id="mem-generate-btn">开始生成</button>
         </div>
     </div>
 

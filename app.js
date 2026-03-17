@@ -53,6 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 聊天软件相关元素
     const chatAppBtn = document.getElementById('app-item-1');
+    const appItem3 = document.getElementById('app-item-3');
+    const appItem4 = document.getElementById('app-item-4');
     const chatAppPage = document.getElementById('chat-app-page');
     const closeChatBtn = document.getElementById('close-chat-btn');
     const chatNavItems = document.querySelectorAll('.chat-nav-item');
@@ -76,7 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let chatList = JSON.parse(localStorage.getItem('chat_list') || '[]');
     let messagesData = JSON.parse(localStorage.getItem('chat_messages') || '{}'); // { contactId: [ {sender:'me'|'them', text:'', time:123} ] }
     let stickerGroups = JSON.parse(localStorage.getItem('chat_sticker_groups') || '[]'); // [ {id, name, stickers: [{name, url}]} ]
-    let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}'); // { contactId: { wbId, stickerGroupId, autoMem, memory, userPersona } }
+let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}'); // { contactId: { wbId, stickerGroupId, autoMem, memory, userPersona, autoMemThreshold, userHabits } }
+let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}'); // { contactId: [ {id, text, fromIndex, toIndex, time} ] }
+let autoMemThresholds = JSON.parse(localStorage.getItem('chat_auto_mem_thresholds') || '{}'); // { contactId: number }
+let autoMemEnabled = JSON.parse(localStorage.getItem('chat_auto_mem_enabled') || '{}'); // { contactId: boolean }
+let memInjectCounts = JSON.parse(localStorage.getItem('chat_mem_inject_counts') || '{}'); // { contactId: number }
+let contextMsgCounts = JSON.parse(localStorage.getItem('chat_context_msg_counts') || '{}'); // { contactId: number }
     let worldBooks = JSON.parse(localStorage.getItem('chat_worldbooks') || '{"global":[], "local":[]}');
     
     let currentContactAvatarBase64 = '';
@@ -279,6 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rpStickerGroupSelect = document.getElementById('rp-sticker-group-select');
     const rpAutoMemory = document.getElementById('rp-auto-memory');
     const rpMemoryContent = document.getElementById('rp-memory-content');
+    const rpUserHabits = document.getElementById('rp-user-habits');
     const rpUserPersona = document.getElementById('rp-user-persona');
     
     let isRoleProfileModified = false;
@@ -325,23 +333,9 @@ document.addEventListener('DOMContentLoaded', () => {
             chatDrawerSmile.classList.add('active');
             chatSmileBtn.classList.add('active');
             renderChatStickerDrawer();
-            convMessagesContainer.scrollTop = convMessagesContainer.scrollHeight;
+            if (convMessagesContainer) convMessagesContainer.scrollTop = convMessagesContainer.scrollHeight;
         }
     });
-
-    if (chatStarBtn) {
-        chatStarBtn.addEventListener('click', () => {
-            if(chatDrawerStar.classList.contains('active')) {
-                hideAllDrawers();
-            } else {
-                hideAllDrawers();
-                chatDrawerStar.classList.add('active');
-                chatStarBtn.classList.add('active');
-                if (window.renderGiftDrawer) window.renderGiftDrawer();
-                convMessagesContainer.scrollTop = convMessagesContainer.scrollHeight;
-            }
-        });
-    }
 
     // 相册上传逻辑
     const uploadChatImage = document.getElementById('upload-chat-image');
@@ -444,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalIcon = chatAiBtn.innerHTML;
         chatAiBtn.innerHTML = `<i class='bx bx-loader-alt spin'></i>`;
         chatAiBtn.disabled = true;
-        const statusEl = document.getElementById('weibo-status');
+        const statusEl = document.getElementById('conv-header-status');
         const statusDot = document.getElementById('weibo-status-dot');
         if (statusEl) statusEl.innerText = '正在输入中...';
         if (statusDot) statusDot.style.backgroundColor = '#ccc';
@@ -452,34 +446,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const replyMin = profile.replyMin || 1;
         const replyMax = profile.replyMax || 4;
 
-        let systemPrompt = `你扮演角色：${contact.name}。
+let systemPrompt = `你扮演角色：${contact.name}。
 基本设定：性别 ${contact.gender || '未知'}，年龄 ${contact.age || '未知'}。
 详细人设：${contact.desc || '暂无'}
-请遵循线上聊天规则，要有活人感。请严格保持短句输出，像真人发微信一样，切忌长篇大论。
-【重要指令】你必须严格根据对话上下文，并且每次只发送 ${replyMin} 到 ${replyMax} 条消息，绝对不要超过 ${replyMax} 条。
-在每次回复的最前面，你必须根据当前的人设、世界书和聊天内容，输出你当前的心情、动作或状态。必须严格使用 [状态:你的状态] 的格式，例如：[状态:去抓某个又偷吃的小猫(=^･ω･^=)]。
+请遵循线上真实聊天规则，极度口语化，要有活人感。**强制采用短句式回复，每句话尽量简短**。如果想表达多层意思，必须分成多条消息发送！
+【重要指令】每次回复的消息条数应在 ${replyMin} 到 ${replyMax} 条之间。你必须严格使用给定的人设、世界书和用户人设来回答问题。
 
 【输出格式要求（非常重要）】
-你必须返回一个JSON数组，数组的构成规则如下：
-1. 数组的【第一个元素】必须是你当前的状态，格式为："[状态:你的状态(带颜文字)]"
-2. 数组的【最后一个元素】必须是你的心声，格式为："[心声:[生理反应: xxx][色色想法: xxx][行动: xxx]]"
-3. 数组中间的元素是你要发送的具体消息内容，每条消息作为一个单独的字符串元素。消息条数必须在 ${replyMin} 到 ${replyMax} 条之间。不要把状态或心声写在消息正文里。
-如果不足3个元素，会被视为不合格的输出。
-
-示例输出：
+你必须返回一个严格的JSON数组，数组的第一项必须是状态，最后一项必须是心声，中间的项是你要发送的一条或多条短消息。数组长度最小为3，最大为 ${replyMax + 2}。
+格式范例：
 [
-  "[状态:害羞地低头(*ﾉωﾉ)]",
-  "刚刚看到你发的消息啦",
-  "其实我一直都在想你呢...",
-  "[心声:[生理反应: 脸红心跳加速][色色想法: 想被他抱在怀里][行动: 咬住下唇]]"
+  "[状态:你的状态(带颜文字)]",
+  "第一条极短的口语化消息",
+  "第二条消息(可选)",
+  "[心声:[生理反应: xxx][色色内容/日常: xxx][行动: xxx]]"
 ]
-
-如果你想发语音，可以使用格式 [语音:内容:时长秒数] 作为消息元素（如："今天去吃什么呀[语音:今天去吃什么呀:3]"）。
-如果你想主动转账给用户，可以使用格式 [转账:金额] 作为消息元素（如："[转账:520]"）。
-如果你想发送图片给用户（根据聊天内容判断是否需要发图），请发送格式为 [发送图片:具体的英文画面描述] 的消息（如："[发送图片:1girl, looking at viewer, smile, selfie]"）。
+注意：
+1. 数组的第一个元素必须是形如 [状态:当前中文状态带颜文字] 的字符串！
+2. 最后一个元素必须是形如 [心声:...] 的字符串！
+3. 中间的每个元素代表一个独立的气泡消息，必须是短句！
+4. 如果你想发语音，可以使用格式 [语音:内容:时长秒数]（如：[语音:你好呀:3]）。
+5. 如果你想主动转账给用户，可以使用格式 [转账:金额]（如：[转账:520]）。
+6. 如果你想发送图片，请发送格式为 [发送图片:具体的英文画面描述] 的消息。
+7. 关于[色色内容/日常: xxx]：角色必须根据当下对话场景来展露想法，不一定每一轮都是黄色内容。有时候也可以是觉得她好可爱想抱抱等日常想法。
 `;
         if (profile.userPersona) systemPrompt += `\n【用户人设】\n${profile.userPersona}\n`;
-        if (profile.memory) systemPrompt += `\n【总结记忆】\n${profile.memory}\n`;
+        if (profile.userHabits) systemPrompt += `\n【用户习惯/喜好/备忘】\n${profile.userHabits}\n`;
+
+        // 注入精选记忆
+        let injectLimits = JSON.parse(localStorage.getItem('chat_mem_inject_limits') || '{}');
+        let injectCount = injectLimits[currentActiveContactId] !== undefined ? injectLimits[currentActiveContactId] : 5;
+        let chatMemoriesData = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+        let mems = chatMemoriesData[currentActiveContactId] || [];
+        if (injectCount > 0 && mems.length > 0) {
+            let injectMems = mems.slice(-injectCount);
+            let memText = injectMems.map(m => `- ${m.text}`).join('\n');
+            systemPrompt += `\n【过往记忆回顾】\n以下是你之前和User聊天发生的重要事件与情感羁绊总结：\n${memText}\n`;
+        }
 
         // 时间感知增强逻辑
         if (profile.timeAware) {
@@ -546,7 +549,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let apiMessages = [{ role: 'system', content: systemPrompt }];
         
-        msgs.forEach(msg => {
+        let contextLimits = JSON.parse(localStorage.getItem('chat_context_limits') || '{}');
+        let ctxLimit = contextLimits[currentActiveContactId] || 20;
+        let recentMsgs = msgs.slice(-ctxLimit);
+
+        recentMsgs.forEach(msg => {
             let role = msg.sender === 'me' ? 'user' : 'assistant';
             
             if (msg.recalled) {
@@ -644,69 +651,93 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error('No JSON array found');
                 }
             } catch (e) {
-                messagesArray = aiReplyRaw.split('\n').filter(m => m.trim().length > 0);
+                let lines = aiReplyRaw.split('\n').filter(m => m.trim().length > 0);
+                messagesArray = lines;
             }
 
             let innerVoiceTextValue = '';
-            if (messagesArray.length > 0) {
-                let lastItem = messagesArray[messagesArray.length - 1];
-                if (typeof lastItem === 'string' && (lastItem.includes('[心声:') || lastItem.match(/\[生理反应:|\[色色想法:|\[行动:/))) {
-                    innerVoiceTextValue = messagesArray.pop(); // 获取心声
+            // 查找心声标签
+            const heartIndex = messagesArray.findIndex(item => typeof item === 'string' && item.includes('[心声:'));
+            if (heartIndex !== -1) {
+                innerVoiceTextValue = messagesArray.splice(heartIndex, 1)[0];
+            } else if (messagesArray.length > 0 && String(messagesArray[messagesArray.length - 1]).includes('[生理反应:')) {
+                innerVoiceTextValue = messagesArray.pop();
+            }
+
+            // 自动总结记忆触发
+            let autoEnabled = JSON.parse(localStorage.getItem('chat_auto_mem_enabled') || '{}');
+            let autoThresholds = JSON.parse(localStorage.getItem('chat_auto_mem_thresholds') || '{}');
+            if (autoEnabled[currentActiveContactId]) {
+                const threshold = autoThresholds[currentActiveContactId] || 100;
+                let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+                let memories = chatMemories[currentActiveContactId] || [];
+                let lastSummaryIndex = memories.length > 0 ? memories[memories.length - 1].toIndex : 0;
+                let currentTotalMsgs = messagesData[currentActiveContactId].length;
+                
+                if (currentTotalMsgs - lastSummaryIndex >= threshold) {
+                    if (window.triggerAutoMemorySummary) {
+                        window.triggerAutoMemorySummary(currentActiveContactId, lastSummaryIndex, currentTotalMsgs);
+                    }
                 }
             }
 
-            let newStateStr = '';
-            if (messagesArray.length > 0 && typeof messagesArray[0] === 'string' && messagesArray[0].includes('状态:')) {
-                let statusMatch = messagesArray[0].match(/状态:(.*?)\]/);
+            // 查找状态标签
+            const stateIndex = messagesArray.findIndex(item => typeof item === 'string' && item.includes('[状态:'));
+            let newStateStr = '在线';
+            if (stateIndex !== -1) {
+                const stateStr = messagesArray.splice(stateIndex, 1)[0];
+                let statusMatch = stateStr.match(/状态:(.*?)\]/);
                 if (statusMatch) {
                     newStateStr = statusMatch[1].replace(']', '').trim();
-                    if (statusEl) statusEl.innerText = newStateStr;
-                    
-                    let prof = roleProfiles[currentActiveContactId] || {};
-                    prof.lastState = newStateStr;
-                    roleProfiles[currentActiveContactId] = prof;
-                    safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
                 }
-                messagesArray.shift();
-            } else {
-                // 尝试从剩余消息中提取状态，以防格式不标准
-                for(let i=0; i<messagesArray.length; i++) {
-                    if (typeof messagesArray[i] === 'string' && messagesArray[i].includes('[状态:')) {
-                        let statusMatch = messagesArray[i].match(/\[状态:(.*?)\]/);
-                        if (statusMatch) {
-                            newStateStr = statusMatch[1].replace(']', '').trim();
-                            if (statusEl) statusEl.innerText = newStateStr;
-                            let prof = roleProfiles[currentActiveContactId] || {};
-                            prof.lastState = newStateStr;
-                            roleProfiles[currentActiveContactId] = prof;
-                            safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
-                            messagesArray[i] = messagesArray[i].replace(/\[状态:.*?\]/, '').trim();
-                        }
-                    }
+            } else if (messagesArray.length > 0 && String(messagesArray[0]).includes('状态:')) {
+                const stateStr = messagesArray.shift();
+                let statusMatch = stateStr.match(/状态:(.*?)\]/);
+                if (statusMatch) {
+                    newStateStr = statusMatch[1].replace(']', '').trim();
                 }
-                if (!newStateStr && statusEl) statusEl.innerText = '在线';
             }
+
+            if (statusEl) statusEl.innerText = newStateStr;
+            let prof = roleProfiles[currentActiveContactId] || {};
+            prof.lastState = newStateStr;
+            if (innerVoiceTextValue) {
+                prof.lastInnerVoice = innerVoiceTextValue;
+                // 实时更新心声卡片 (如果已打开)
+                if (typeof renderInnerVoice === 'function' && document.getElementById('inner-voice-modal').style.display === 'flex') {
+                    renderInnerVoice(innerVoiceTextValue);
+                }
+            }
+            roleProfiles[currentActiveContactId] = prof;
+            safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
+
             if (statusDot) statusDot.style.backgroundColor = '#ccc';
-            
-            // 清理可能混在消息体里的残留标签
-            messagesArray = messagesArray.filter(m => m && m.trim().length > 0);
+
+            // 清理空消息和可能混杂的标签
+            messagesArray = messagesArray.filter(m => {
+                if (typeof m !== 'string') return true;
+                const clean = m.replace(/\[状态:.*?\]/g, '').replace(/\[心声:.*?\]/g, '').trim();
+                return clean.length > 0;
+            });
 
             const sendNextMessage = (index) => {
                 if (index >= messagesArray.length) {
-                    // 对话输出完毕后，统一更新一次心声
-                    let prof = roleProfiles[currentActiveContactId] || {};
-                    prof.lastInnerVoice = innerVoiceTextValue;
-                    roleProfiles[currentActiveContactId] = prof;
-                    safeSetItem('chat_role_profiles', JSON.stringify(roleProfiles));
                     chatAiBtn.innerHTML = originalIcon;
                     chatAiBtn.disabled = false;
+                    const currentProf = roleProfiles[currentActiveContactId] || {};
+                    if (statusEl) statusEl.innerText = currentProf.lastState || '在线';
                     return;
                 }
 
                 let msgText = messagesArray[index];
+                if (typeof msgText !== 'string') {
+                    msgText = JSON.stringify(msgText);
+                }
                 
-                // 去除可能遗漏的心声或状态标签
+                // 去除所有可能混入的状态前缀
+                msgText = msgText.replace(/^\[?状态[:：].*?\]?\s*/i, '');
                 msgText = msgText.replace(/\[状态:.*?\]/g, '').replace(/\[心声:.*?\]/g, '').trim();
+                
                 if (!msgText) {
                     sendNextMessage(index + 1);
                     return;
@@ -789,13 +820,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const physiological = parseSection('生理反应', text);
-        const naughty = parseSection('色色想法', text);
+        const thoughts = parseSection('色色内容/日常', text) || parseSection('想法', text) || parseSection('色色想法', text); // 兼容旧格式
         const action = parseSection('行动', text);
 
-        if (physiological || naughty || action) {
+        if (physiological || thoughts || action) {
             let html = '';
             if (physiological) html += `<div style="background: rgba(255,105,180,0.1); border-left: 3px solid #ff69b4; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #ff69b4; display: block; margin-bottom: 4px; font-size: 11px;">Physiological (生理)</strong>${physiological}</div>`;
-            if (naughty) html += `<div style="background: rgba(147,112,219,0.1); border-left: 3px solid #9370db; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #9370db; display: block; margin-bottom: 4px; font-size: 11px;">Naughty Thoughts (想法)</strong>${naughty}</div>`;
+            if (thoughts) html += `<div style="background: rgba(147,112,219,0.1); border-left: 3px solid #9370db; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333; margin-bottom: 10px;"><strong style="color: #9370db; display: block; margin-bottom: 4px; font-size: 11px;">Inner Thoughts (色色内容/日常)</strong>${thoughts}</div>`;
             if (action) html += `<div style="background: rgba(30,144,255,0.1); border-left: 3px solid #1e90ff; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #333;"><strong style="color: #1e90ff; display: block; margin-bottom: 4px; font-size: 11px;">Action (行动)</strong>${action}</div>`;
             innerVoiceText.innerHTML = html;
         } else {
@@ -838,7 +869,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            const sysPrompt = `你扮演角色：${contact.name}。人设：${contact.desc || '无'}。请输出你此刻内心的真实想法。必须严格按照格式输出：[心声:[生理反应: xxx][色色想法: xxx][行动: xxx]]。不要有任何多余的开头结尾。`;
+            const sysPrompt = `你扮演角色：${contact.name}。人设：${contact.desc || '无'}。请输出你此刻内心的真实想法。必须严格按照格式输出：[心声:[生理反应: xxx][色色内容/日常: xxx][行动: xxx]]。不要有任何多余的开头结尾。注意：[色色内容/日常]意思是角色根据当下对话场景来展露想法，不一定每一轮都是黄色内容。有时候也可以是觉得她好可爱想抱抱等日常想法。`;
             
             try {
                 let url = apiData.url;
@@ -953,30 +984,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 将点击头像显示心声气泡改为更换聊天对象头像功能
     convHeaderAvatar.addEventListener('click', () => {
-        const uploadContactAvatar = document.getElementById('upload-contact-avatar');
-        if(uploadContactAvatar) {
-            uploadContactAvatar.onchange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                compressImage(file, 400, 400, 0.8, (dataUrl) => {
-                    if (dataUrl && currentActiveContactId) {
-                        const weiboAvatarImg = document.getElementById('weibo-avatar-img');
-                        if (weiboAvatarImg) weiboAvatarImg.style.backgroundImage = `url('${dataUrl}')`;
-                        
-                        const contactIndex = contacts.findIndex(c => c.id === currentActiveContactId);
-                        if(contactIndex !== -1) {
-                            contacts[contactIndex].avatar = dataUrl;
-                            localStorage.setItem('chat_contacts', JSON.stringify(contacts));
-                            renderMessages();
-                            renderContacts();
-                            renderChatList();
-                        }
-                    }
-                });
-            };
-            uploadContactAvatar.click();
+        // 创建一个隐藏的文件上传输入框
+        let fileInput = document.getElementById('temp-avatar-upload');
+        if (!fileInput) {
+            fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.id = 'temp-avatar-upload';
+            fileInput.accept = 'image/*';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
         }
+        
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            compressImage(file, 400, 400, 0.8, (dataUrl) => {
+                if (dataUrl && currentActiveContactId) {
+                    const contactIndex = contacts.findIndex(c => c.id === currentActiveContactId);
+                    if (contactIndex !== -1) {
+                        contacts[contactIndex].avatar = dataUrl;
+                        localStorage.setItem('chat_contacts', JSON.stringify(contacts));
+                        
+                        // 更新UI
+                        convHeaderAvatar.style.backgroundImage = `url('${dataUrl}')`;
+                        const weiboAvatar = document.getElementById('weibo-avatar-img');
+                        if (weiboAvatar) weiboAvatar.style.backgroundImage = `url('${dataUrl}')`;
+                        
+                        renderContacts();
+                        renderChatList();
+                        renderMessages(); // 更新消息列表中的头像
+                    }
+                }
+            });
+            // 清空 value 允许重复选同一张图
+            e.target.value = '';
+        };
+        
+        fileInput.click();
     });
 
     // 角色详情页逻辑
@@ -1003,8 +1049,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rmxEl) rmxEl.addEventListener('input', markRoleProfileModified);
         const taEl = document.getElementById('rp-time-aware');
         if (taEl) taEl.addEventListener('change', markRoleProfileModified);
-        rpAutoMemory.addEventListener('change', markRoleProfileModified);
-        rpMemoryContent.addEventListener('input', markRoleProfileModified);
         rpUserPersona.addEventListener('input', markRoleProfileModified);
         const ccEl = document.getElementById('rp-custom-css');
         if (ccEl) ccEl.addEventListener('input', markRoleProfileModified);
@@ -1033,10 +1077,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const taElVal = document.getElementById('rp-time-aware');
         if (taElVal) taElVal.checked = profile.timeAware || false;
 
-        rpAutoMemory.checked = profile.autoMem || false;
-        rpMemoryContent.value = profile.memory || '';
         rpUserPersona.value = profile.userPersona || '';
         const ccElVal = document.getElementById('rp-custom-css');
+        rpUserHabits.value = profile.userHabits || '';
         if (ccElVal) ccElVal.value = profile.customCss || '';
         if (profile.userAvatar) {
             document.getElementById('rp-user-avatar-preview').style.backgroundImage = `url('${profile.userAvatar}')`;
@@ -1049,6 +1092,30 @@ document.addEventListener('DOMContentLoaded', () => {
         roleProfilePage.style.display = 'flex';
     });
     
+    if (convHeaderName) {
+        convHeaderName.addEventListener('blur', () => {
+            if(!currentActiveContactId) return;
+            const newName = convHeaderName.innerText.trim();
+            if(newName) {
+                const contactIndex = contacts.findIndex(c => c.id === currentActiveContactId);
+                if(contactIndex !== -1) {
+                    contacts[contactIndex].name = newName;
+                    localStorage.setItem('chat_contacts', JSON.stringify(contacts));
+                    if (rpNameDisplay) rpNameDisplay.innerText = newName;
+                    renderContacts();
+                    renderChatList();
+                }
+            }
+        });
+        
+        convHeaderName.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                convHeaderName.blur();
+            }
+        });
+    }
+
     // 修改名字备注
     rpNameDisplay.addEventListener('blur', () => {
         if(!currentActiveContactId) return;
@@ -1164,10 +1231,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rmxElSave) profile.replyMax = parseInt(rmxElSave.value, 10) || 4;
         const taElSave = document.getElementById('rp-time-aware');
         if (taElSave) profile.timeAware = taElSave.checked;
-        profile.autoMem = rpAutoMemory.checked;
-        profile.memory = rpMemoryContent.value.trim();
         profile.userPersona = rpUserPersona.value.trim();
         const ccElSave = document.getElementById('rp-custom-css');
+        profile.userHabits = rpUserHabits.value.trim();
         if (ccElSave) profile.customCss = ccElSave.value;
         
         roleProfiles[currentActiveContactId] = profile;
@@ -2038,10 +2104,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const weiboAvatar = document.getElementById('weibo-avatar-img');
         if (weiboAvatar) weiboAvatar.style.backgroundImage = `url('${contact.avatar || ''}')`;
         
-        const weiboName = document.getElementById('weibo-name');
+        const weiboName = document.getElementById('conv-header-name');
         if (weiboName) weiboName.innerText = contact.name || '未命名';
         
-        const weiboStatus = document.getElementById('weibo-status');
+        const weiboStatus = document.getElementById('conv-header-status');
         const profile = roleProfiles[contact.id] || {};
         if (weiboStatus) weiboStatus.innerText = profile.lastState || '在线';
         
@@ -2219,8 +2285,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
             } else {
+                // 剥离消息中可能残留的 [状态:xxx]
+                let cleanText = msg.text.replace(/^\[状态:.*?\]\s*/g, '');
+                
                 // 解析语音
-                let voiceMatch = msg.text.match(/^\[语音:(.*?):(.*?)\]$/);
+                let voiceMatch = cleanText.match(/^\[语音:(.*?):(.*?)\]$/);
                 if (voiceMatch) {
                     isVoice = true;
                     let text = voiceMatch[1];
@@ -2237,7 +2306,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="voice-text-result">${text}</div>
                     `;
                 } else {
-                    innerHtml = `<div class="msg-bubble" data-index="${i}">${quoteHtml}${msg.text}</div>`;
+                    innerHtml = `<div class="msg-bubble" data-index="${i}">${quoteHtml}${cleanText}</div>`;
                 }
             }
 
@@ -2494,6 +2563,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // 每次进入默认显示聊天页面
         switchChatTab('messages', '聊天');
     });
+
+    if (appItem3) {
+        appItem3.addEventListener('click', () => {
+            alert('情侣空间功能开发中...');
+        });
+    }
+
+    if (appItem4) {
+        appItem4.addEventListener('click', () => {
+            alert('作家协会功能开发中...');
+        });
+    }
 
     // 关闭聊天软件
     closeChatBtn.addEventListener('click', () => {
@@ -2895,7 +2976,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const sysPrompt = `你扮演角色：${cInfo.name}。人设：${cInfo.desc || '无'}。请发一条简短的朋友圈动态。不要任何说明，只输出朋友圈正文，可以带表情符号。如果你想配图，请在最后加上 [发送图片:具体的英文画面描述]。`;
+        const sysPrompt = `你扮演角色：${cInfo.name}。人设：${cInfo.desc || '无'}。请发一条简短的朋友圈动态。不要任何说明，只输出朋友圈正文，可以带表情符号。如果你想配图，请在最后加上 [发送图片:具体的英文画面描述]。`;
 
             try {
                 let url = apiData.url;
@@ -3614,6 +3695,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 暴露核心接口供其他文件调用
     window.ChatApp = {
+        get currentActiveContactId() { return currentActiveContactId; },
         contacts: contacts,
         chatList: chatList,
         messagesData: messagesData,
