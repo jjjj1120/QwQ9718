@@ -467,27 +467,34 @@ let systemPrompt = `你扮演角色：${contact.name}。
 【重要指令】每次回复的消息条数应在 ${replyMin} 到 ${replyMax} 条之间。你必须严格使用给定的人设、世界书和用户人设来回答问题。
 
 【输出格式要求（非常重要）】
-你必须返回一个严格的JSON数组，数组的第一项必须是状态，最后一项必须是心声，中间的项是你要发送的一条或多条短消息。数组长度最小为3，最大为 ${replyMax + 2}。
+你必须返回一个严格的JSON数组，数组的第一项必须是状态，最后一项必须是心声，中间的项是你要发送的一条或多条短消息。必须严格保证JSON格式正确，独立气泡必须是独立的数组元素！
 格式范例：
 [
   "[状态:你的状态(带颜文字)]",
   "第一条极短的口语化消息",
-  "第二条消息(可选)",
+  "[表情包:你的表情]",
+  "第二条文字消息",
   "[心声:[生理反应: xxx][色色想法: xxx 或 日常想法: xxx][行动: xxx]]"
 ]
 注意：
 1. 数组的第一个元素必须是形如 [状态:当前中文状态带颜文字] 的字符串！
 2. 最后一个元素必须是形如 [心声:...] 的字符串！
-3. 中间的每个元素代表一个独立的气泡消息，必须是短句！
-4. 如果你想发语音，可以使用格式 [语音:内容:时长秒数]（如：[语音:你好呀:3]）。
-5. 如果你想主动转账给用户，可以使用格式 [转账:金额]（如：[转账:520]）。
-6. 如果你想发送图片，请发送格式为 [发送图片:具体的英文画面描述] 的消息。
-7. 心声必须严格包含【生理反应】、【行动】以及【想法】三个部分！
-8. 关于想法部分，请根据对话场景决定输出 [色色想法: xxx] 还是 [日常想法: xxx] （只能选其一作为标签输出）。
-9. 强烈要求：心声内容必须采用角色第一人称描述，深度剖析角色表面话语之下的真实心理、隐秘欲望和情感波动，要有窥探到角色内心最深处的窥视感，绝不可浅尝辄止。
+3. 中间的每个元素代表一个独立的气泡消息，必须是独立的字符串，绝对不能把两条消息或表情包黏在一个字符串里！
+4. **强制要求**：你每一轮回复都必须至少发送一个表情包！格式为 [表情包:名称]，必须作为数组的独立元素！
+5. 如果你想发语音，格式 [语音:内容:时长秒数] 也必须是独立的数组元素，绝不能和文字混在一起。
+6. 如果你想主动转账给用户，可以使用格式 [转账:金额]（如：[转账:520]）。
+7. 如果你想发送图片，请发送格式为 [发送图片:具体的英文画面描述] 的消息。
+8. 心声必须严格包含【生理反应】、【行动】以及【想法】三个部分！
+9. 关于想法部分，请根据对话场景决定输出 [色色想法: xxx] 还是 [日常想法: xxx] （只能选其一作为标签输出）。
+10. 强烈要求：心声内容必须采用角色第一人称描述，深度剖析角色表面话语之下的真实心理、隐秘欲望和情感波动，要有窥探到角色内心最深处的窥视感，绝不可浅尝辄止。
 `;
         if (profile.userPersona) systemPrompt += `\n【用户人设】\n${profile.userPersona}\n`;
         if (profile.userHabits) systemPrompt += `\n【用户习惯/喜好/备忘】\n${profile.userHabits}\n`;
+
+        if (window.autoReplyActiveModifier) {
+            systemPrompt += `\n${window.autoReplyActiveModifier}\n`;
+            window.autoReplyActiveModifier = null;
+        }
 
         // 注入精选记忆
         let injectLimits = JSON.parse(localStorage.getItem('chat_mem_inject_limits') || '{}');
@@ -1098,6 +1105,10 @@ let systemPrompt = `你扮演角色：${contact.name}。
         if (rmxElVal) rmxElVal.value = profile.replyMax || 4;
         const taElVal = document.getElementById('rp-time-aware');
         if (taElVal) taElVal.checked = profile.timeAware || false;
+        const arElVal = document.getElementById('rp-auto-reply');
+        if (arElVal) arElVal.checked = profile.autoReply || false;
+        const ariElVal = document.getElementById('rp-auto-reply-interval');
+        if (ariElVal) ariElVal.value = profile.autoReplyInterval || 10;
 
         rpUserPersona.value = profile.userPersona || '';
         const ccElVal = document.getElementById('rp-custom-css');
@@ -1253,6 +1264,10 @@ let systemPrompt = `你扮演角色：${contact.name}。
         if (rmxElSave) profile.replyMax = parseInt(rmxElSave.value, 10) || 4;
         const taElSave = document.getElementById('rp-time-aware');
         if (taElSave) profile.timeAware = taElSave.checked;
+        const arElSave = document.getElementById('rp-auto-reply');
+        if (arElSave) profile.autoReply = arElSave.checked;
+        const ariElSave = document.getElementById('rp-auto-reply-interval');
+        if (ariElSave) profile.autoReplyInterval = parseInt(ariElSave.value, 10) || 10;
         profile.userPersona = rpUserPersona.value.trim();
         const ccElSave = document.getElementById('rp-custom-css');
         if (rpUserHabits) profile.userHabits = rpUserHabits.value.trim();
@@ -2321,9 +2336,12 @@ let systemPrompt = `你扮演角色：${contact.name}。
                     let calculatedWidth = Math.min(maxW, minW + (duration * 6));
                     
                     innerHtml = `
-                        <div class="voice-bubble" style="width: ${calculatedWidth}px;" onclick="toggleVoiceText(this); event.stopPropagation();">
-                            <i class='bx bx-wifi voice-icon'></i>
-                            <span>${duration}"</span>
+                        <div class="voice-bubble-wrapper" style="display: flex; align-items: center; gap: 8px;">
+                            <div class="voice-bubble" style="width: ${calculatedWidth}px;">
+                                <i class='bx bx-wifi voice-icon'></i>
+                                <span>${duration}"</span>
+                            </div>
+                            <button class="voice-transcribe-btn" onclick="toggleVoiceText(this); event.stopPropagation();" style="background: rgba(0,0,0,0.05); border: 1px solid #ddd; font-size: 11px; color: #555; cursor: pointer; padding: 3px 6px; border-radius: 6px;">转文字</button>
                         </div>
                         <div class="voice-text-result">${text}</div>
                     `;
@@ -2382,7 +2400,7 @@ let systemPrompt = `你扮演角色：${contact.name}。
     if(tvBg) tvBg.addEventListener('click', () => { if(tvModal) tvModal.style.display = 'none'; });
 
     window.toggleVoiceText = function(element) {
-        const textResult = element.nextElementSibling;
+        const textResult = element.parentElement.nextElementSibling;
         if(textResult && textResult.classList.contains('voice-text-result')) {
             textResult.classList.toggle('show');
         }
@@ -2998,7 +3016,20 @@ let systemPrompt = `你扮演角色：${contact.name}。
                 return;
             }
 
-        const sysPrompt = `你扮演角色：${cInfo.name}。人设：${cInfo.desc || '无'}。请发一条简短的朋友圈动态。不要任何说明，只输出朋友圈正文，可以带表情符号。如果你想配图，请在最后加上 [发送图片:具体的英文画面描述]。`;
+            let recentChat = "";
+            let chatData = JSON.parse(localStorage.getItem('chat_messages') || '{}')[cId] || [];
+            if (chatData.length > 0) {
+                let lastMsgs = chatData.slice(-10).map(m => {
+                    let sender = m.sender === 'me' ? 'User' : cInfo.name;
+                    return `${sender}: ${m.text.replace(/\\[.*?\\]/g, '').trim()}`;
+                }).filter(t => t.length > (t.indexOf(':') + 2)).join('\n');
+                
+                if (lastMsgs) {
+                    recentChat = `\n以下是你们最近的聊天记录：\n${lastMsgs}\n请务必贴合最近的聊天内容和当下的情境来发朋友圈，推进情感，绝对不要脱离聊天记录空想捏造。`;
+                }
+            }
+
+            const sysPrompt = `你扮演角色：${cInfo.name}。人设：${cInfo.desc || '无'}。请发一条简短的朋友圈动态。不要任何说明，只输出朋友圈正文，可以带表情符号。如果你想配图，请在最后加上 [发送图片:具体的英文画面描述]。${recentChat}`;
 
             try {
                 let url = apiData.url;
@@ -3714,6 +3745,97 @@ let systemPrompt = `你扮演角色：${contact.name}。
         return false;
     };
 
+
+    // --- 主动发消息 (Auto-Message) 后台循环 ---
+    setInterval(async () => {
+        const now = Date.now();
+        const profiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
+        const msgsData = JSON.parse(localStorage.getItem('chat_messages') || '{}');
+        
+        for (const cId of Object.keys(profiles)) {
+            const p = profiles[cId];
+            if (p.autoReply && p.autoReplyInterval) {
+                const msgs = msgsData[cId] || [];
+                const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+                const lastTime = lastMsg ? lastMsg.time : 0;
+                
+                if (now - lastTime >= p.autoReplyInterval * 60000) {
+                    if (!p.lastAutoReplyTriggerTime || now - p.lastAutoReplyTriggerTime > 60000) {
+                        p.lastAutoReplyTriggerTime = now;
+                        localStorage.setItem('chat_role_profiles', JSON.stringify(profiles));
+                        
+                        if (currentActiveContactId === cId) {
+                            const chatAiBtn = document.getElementById('chat-ai-btn');
+                            if (chatAiBtn && !chatAiBtn.disabled) {
+                                window.autoReplyActiveModifier = "【系统重要提示】距离上次聊天已经过去了一段时间。请你主动找User说话，推进聊天情节，根据上下文和当前时间开启新的话题。绝对不要重复刚才说过的内容！";
+                                chatAiBtn.click();
+                            }
+                        } else {
+                            triggerBackgroundAutoReply(cId, p, msgsData);
+                        }
+                    }
+                }
+            }
+        }
+    }, 30000); // 每 30 秒检查一次
+
+    async function triggerBackgroundAutoReply(contactId, profile, msgsData) {
+        const contact = contacts.find(c => c.id === contactId);
+        if (!contact) return;
+        const apiData = JSON.parse(localStorage.getItem('api_settings') || '{}');
+        if (!apiData.url || !apiData.key || !apiData.modelName) return;
+
+        let sysPrompt = `你扮演角色：${contact.name}。人设：${contact.desc || '无'}。请遵循线上真实聊天规则，极度口语化。
+【系统重要提示】距离你们上次聊天已经过去了一段时间，请你主动找User说话，推进情节，根据当前时间开启新话题。绝对不要重复刚才的内容！
+【输出格式】必须返回严格的JSON数组，至少包含状态、消息和心声。必须包含至少一个格式为 [表情包:名称] 的独立表情包元素。`;
+        
+        let apiMessages = [{ role: 'system', content: sysPrompt }];
+        let recentMsgs = (msgsData[contactId] || []).slice(-10);
+        recentMsgs.forEach(msg => {
+            let role = msg.sender === 'me' ? 'user' : 'assistant';
+            apiMessages.push({ role: role, content: msg.text.replace(/\[.*?\]/g, '').trim() });
+        });
+
+        try {
+            let url = apiData.url;
+            if (url.endsWith('/')) url = url.slice(0, -1);
+            if (!url.endsWith('/chat/completions')) url += '/chat/completions';
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiData.key}` },
+                body: JSON.stringify({
+                    model: apiData.modelName,
+                    messages: apiMessages
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                let aiReplyRaw = result.choices[0].message.content;
+                let messagesArray = [];
+                try {
+                    const jsonMatch = aiReplyRaw.match(/\[[\s\S]*\]/);
+                    if (jsonMatch) messagesArray = JSON.parse(jsonMatch[0]);
+                } catch(e) { return; }
+                
+                let msgs = JSON.parse(localStorage.getItem('chat_messages') || '{}');
+                if (!msgs[contactId]) msgs[contactId] = [];
+
+                messagesArray.forEach(m => {
+                    if (typeof m === 'string' && m.trim()) {
+                        let clean = m.replace(/\[状态:.*?\]/g, '').replace(/\[心声:.*?\]/g, '').trim();
+                        if (clean) {
+                            msgs[contactId].push({ sender: 'them', text: clean, time: Date.now() });
+                        }
+                    }
+                });
+                localStorage.setItem('chat_messages', JSON.stringify(msgs));
+            }
+        } catch (e) {
+            console.error('Background auto-reply failed', e);
+        }
+    }
 
     // 暴露核心接口供其他文件调用
     window.ChatApp = {
