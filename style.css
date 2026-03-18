@@ -19,7 +19,7 @@
         }
         
         /* 针对所有滚动区域启用硬件加速和流畅滚动 */
-        .chat-content-area, #add-contact-page, #settings-page, #api-settings-page, #nai-settings-page, .wb-content-area, .conv-messages-area, .conv-drawer, #role-profile-page, .beautify-content, .sticker-grid, .sticker-drawer-tabs, .wb-grid {
+        .chat-content-area, #add-contact-page, #settings-page, #api-settings-page, #nai-settings-page, #keep-alive-settings-page, .wb-content-area, .conv-messages-area, .conv-drawer, #role-profile-page, .beautify-content, .sticker-grid, .sticker-drawer-tabs, .wb-grid {
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y !important;
             overscroll-behavior-y: auto !important;
@@ -86,7 +86,7 @@
         #select-contact-modal { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #fff; z-index: 160; flex-direction: column; }
         
         /* === 设置页面与子页面样式 === */
-        #settings-page, #api-settings-page, #nai-settings-page { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #f7f7f7; background-image: radial-gradient(#d5d5d5 2px, transparent 2px); background-size: 20px 20px; z-index: 150; flex-direction: column; overflow-y: auto; transform: translateZ(0); }
+        #settings-page, #api-settings-page, #nai-settings-page, #keep-alive-settings-page { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #f7f7f7; background-image: radial-gradient(#d5d5d5 2px, transparent 2px); background-size: 20px 20px; z-index: 150; flex-direction: column; overflow-y: auto; transform: translateZ(0); }
         .settings-header { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; padding-top: max(20px, env(safe-area-inset-top, 40px)); background: rgba(255,255,255,0.85); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-bottom: 1px solid rgba(0,0,0,0.05); flex-shrink: 0; position: sticky; top: 0; z-index: 10; transform: translateZ(0); }
         .settings-header h2 { font-size: 18px; margin: 0; font-weight: 600; color: #333; }
         

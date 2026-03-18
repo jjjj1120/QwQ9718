@@ -197,7 +197,7 @@
                 <span>nai生图设置</span>
                 <i class='bx bx-chevron-right'></i>
             </div>
-            <div class="settings-item">
+            <div class="settings-item" id="nav-keep-alive-settings">
                 <span>后台保活设置</span>
                 <i class='bx bx-chevron-right'></i>
             </div>
@@ -208,6 +208,30 @@
             <div class="settings-item" id="nav-import-data">
                 <span>导入数据</span>
                 <i class='bx bx-cloud-download'></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- 后台保活设置页面 -->
+    <div id="keep-alive-settings-page">
+        <header class="settings-header">
+            <button class="back-btn" id="close-ka-settings-btn"><i class='bx bx-chevron-left'></i></button>
+            <h2>后台保活设置</h2>
+            <div style="width: 24px;"></div>
+        </header>
+        <div class="api-form-container">
+            <div class="api-form-card" style="text-align: center; padding: 30px 20px;">
+                <i class='bx bx-bell-ring' style="font-size: 48px; color: #007AFF; margin-bottom: 15px;"></i>
+                <h3 style="font-size: 18px; margin-bottom: 10px;">网页通知权限</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.6; margin-bottom: 25px;">
+                    开启后，即使网页在后台运行，角色主动发来的消息也会通过系统弹窗提醒您。
+                    <br><br>
+                    <small>建议：请尽量保持浏览器不被完全关闭，移动端请勿划掉后台卡片。</small>
+                </p>
+                <button class="tp-submit-btn" id="request-notify-btn">点击授权通知</button>
+                <button class="tp-submit-btn" id="test-notify-btn" style="margin-top: 15px; background: #fff; color: #007AFF; border: 1px solid #007AFF; box-shadow: none;">检测后台弹窗</button>
+                <p style="font-size: 12px; color: #999; margin-top: 10px; line-height: 1.4;">点击检测后，请在5秒内将应用退到后台。<br>成功开启的话会收到成功的消息弹窗。</p>
+                <div id="notify-status" style="margin-top: 15px; font-size: 13px; color: #888;">当前状态: 未知</div>
             </div>
         </div>
     </div>
@@ -553,17 +577,6 @@
                         <input type="checkbox" id="rp-time-aware">
                         <span class="slider"></span>
                     </label>
-                </div>
-                <div class="rp-toggle-row" style="margin-top: 10px;">
-                    <span class="rp-toggle-label" style="font-size: 13px;">主动发消息 (开启后自动推进聊天)</span>
-                    <label class="switch">
-                        <input type="checkbox" id="rp-auto-reply">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="rp-select-group" style="flex-direction: row; align-items: center; justify-content: space-between; margin-top: 5px;">
-                    <label style="font-size:12px; color:#888;">主动发消息间隔 (分钟)</label>
-                    <input type="number" id="rp-auto-reply-interval" style="width: 60px; padding: 5px; border: 1px solid #eaeaea; border-radius: 4px; text-align: center;" value="10" min="1">
                 </div>
                 <div class="rp-toggle-row" style="margin-top: 10px;">
                     <span class="rp-toggle-label" style="font-size: 13px;">主动发消息 (开启后自动推进聊天)</span>

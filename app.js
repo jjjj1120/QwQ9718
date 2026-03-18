@@ -3746,8 +3746,26 @@ let systemPrompt = `你扮演角色：${contact.name}。
     };
 
 
-    // --- 主动发消息 (Auto-Message) 后台循环 ---
-    setInterval(async () => {
+    // --- 后台保活与自动消息 (Web Worker) ---
+    const workerScript = `
+        self.onmessage = function(e) {
+            if (e.data === 'start') {
+                setInterval(() => {
+                    self.postMessage('tick');
+                }, 30000);
+            }
+        };
+    `;
+    const workerBlob = new Blob([workerScript], {type: 'application/javascript'});
+    const workerUrl = URL.createObjectURL(workerBlob);
+    const worker = new Worker(workerUrl);
+
+    worker.onmessage = () => {
+        checkAutoReply();
+    };
+    worker.postMessage('start');
+
+    async function checkAutoReply() {
         const now = Date.now();
         const profiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
         const msgsData = JSON.parse(localStorage.getItem('chat_messages') || '{}');
@@ -3764,10 +3782,10 @@ let systemPrompt = `你扮演角色：${contact.name}。
                         p.lastAutoReplyTriggerTime = now;
                         localStorage.setItem('chat_role_profiles', JSON.stringify(profiles));
                         
-                        if (currentActiveContactId === cId) {
+                        if (currentActiveContactId === cId && document.visibilityState === 'visible') {
                             const chatAiBtn = document.getElementById('chat-ai-btn');
                             if (chatAiBtn && !chatAiBtn.disabled) {
-                                window.autoReplyActiveModifier = "【系统重要提示】距离上次聊天已经过去了一段时间。请你主动找User说话，推进聊天情节，根据上下文和当前时间开启新的话题。绝对不要重复刚才说过的内容！";
+                                window.autoReplyActiveModifier = "【系统重要提示】距离你们上次聊天已经过去了一段时间。请你主动找User说话，推进聊天情节，根据上下文和当前时间开启新的话题。绝对不要重复刚才说过的内容！";
                                 chatAiBtn.click();
                             }
                         } else {
@@ -3777,7 +3795,77 @@ let systemPrompt = `你扮演角色：${contact.name}。
                 }
             }
         }
-    }, 30000); // 每 30 秒检查一次
+    }
+
+    // 后台保活设置页面逻辑
+    const kaSettingsNav = document.getElementById('nav-keep-alive-settings');
+    const kaSettingsPage = document.getElementById('keep-alive-settings-page');
+    const closeKaBtn = document.getElementById('close-ka-settings-btn');
+    const reqNotifyBtn = document.getElementById('request-notify-btn');
+    const notifyStatus = document.getElementById('notify-status');
+    const testNotifyBtn = document.getElementById('test-notify-btn');
+
+    if (kaSettingsNav) {
+        kaSettingsNav.addEventListener('click', () => {
+            updateNotifyStatus();
+            if (kaSettingsPage) kaSettingsPage.style.display = 'flex';
+        });
+    }
+    
+    if (closeKaBtn) {
+        closeKaBtn.addEventListener('click', () => {
+            if (kaSettingsPage) kaSettingsPage.style.display = 'none';
+        });
+    }
+
+    function updateNotifyStatus() {
+        if (!('Notification' in window)) {
+            if (notifyStatus) notifyStatus.innerText = "当前浏览器不支持通知";
+            if (reqNotifyBtn) reqNotifyBtn.disabled = true;
+        } else {
+            if (notifyStatus) {
+                const map = { 'granted': '已授权 ✅', 'denied': '已拒绝 ❌', 'default': '未授权 ⚠️' };
+                notifyStatus.innerText = "当前状态: " + (map[Notification.permission] || Notification.permission);
+            }
+        }
+    }
+
+    if (reqNotifyBtn) {
+        reqNotifyBtn.addEventListener('click', () => {
+            if (!('Notification' in window)) {
+                alert('您的浏览器不支持通知功能');
+                return;
+            }
+            Notification.requestPermission().then(permission => {
+                updateNotifyStatus();
+                if (permission === 'granted') {
+                    new Notification('通知测试', { body: '后台保活配置成功！' });
+                }
+            });
+        });
+    }
+
+    if (testNotifyBtn) {
+        testNotifyBtn.addEventListener('click', () => {
+            if (!('Notification' in window) || Notification.permission !== 'granted') {
+                alert('请先授权通知权限！');
+                return;
+            }
+            const originalText = testNotifyBtn.innerText;
+            testNotifyBtn.innerText = '请在5秒内退到后台...';
+            testNotifyBtn.disabled = true;
+            
+            setTimeout(() => {
+                testNotifyBtn.innerText = originalText;
+                testNotifyBtn.disabled = false;
+                if (document.visibilityState === 'hidden') {
+                    new Notification('后台保活测试成功', { body: '您的应用能在后台正常接收消息推送！' });
+                } else {
+                    alert('检测失败：您没有在5秒内退到后台。');
+                }
+            }, 5000);
+        });
+    }
 
     async function triggerBackgroundAutoReply(contactId, profile, msgsData) {
         const contact = contacts.find(c => c.id === contactId);
@@ -3831,6 +3919,20 @@ let systemPrompt = `你扮演角色：${contact.name}。
                     }
                 });
                 localStorage.setItem('chat_messages', JSON.stringify(msgs));
+
+                // 发送浏览器通知
+                if (document.visibilityState === 'hidden' && ('Notification' in window) && Notification.permission === 'granted') {
+                    const lastMsg = messagesArray.find(m => typeof m === 'string' && !m.includes('[状态:') && !m.includes('[心声:'));
+                    const msgPreview = lastMsg ? lastMsg.replace(/\[.*?\]/g, '[媒体]') : '发来了一条新消息';
+                    const n = new Notification(contact.name, {
+                        body: msgPreview,
+                        icon: contact.avatar || ''
+                    });
+                    n.onclick = () => {
+                        window.focus();
+                        n.close();
+                    };
+                }
             }
         } catch (e) {
             console.error('Background auto-reply failed', e);
