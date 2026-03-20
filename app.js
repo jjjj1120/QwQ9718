@@ -1378,12 +1378,14 @@ let systemPrompt = `你扮演角色：${contact.name}。
     const mgrMoveBtn = document.getElementById('mgr-move-btn');
     const mgrDelBtn = document.getElementById('mgr-del-btn');
     const wbContentArea = document.querySelector('#sticker-mgr-page .wb-content-area');
+    const stickerMgrBottomBar = document.getElementById('sticker-mgr-bottom-bar');
 
     if (batchMgrBtn) {
         batchMgrBtn.addEventListener('click', () => {
             isStickerMgrMode = true;
             selectedStickersForMgr.clear();
             if (wbContentArea) wbContentArea.classList.add('mgr-mode-active');
+            if (stickerMgrBottomBar) stickerMgrBottomBar.style.display = 'flex';
             
             // 更新移动分组的下拉列表
             if (mgrMoveSelect) {
@@ -1405,6 +1407,7 @@ let systemPrompt = `你扮演角色：${contact.name}。
             isStickerMgrMode = false;
             selectedStickersForMgr.clear();
             if (wbContentArea) wbContentArea.classList.remove('mgr-mode-active');
+            if (stickerMgrBottomBar) stickerMgrBottomBar.style.display = 'none';
             renderStickerMgrGrid(); // 重新渲染取消选中状态
         });
     }
