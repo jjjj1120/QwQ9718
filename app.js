@@ -323,6 +323,21 @@ let contextMsgCounts = JSON.parse(localStorage.getItem('chat_context_msg_counts'
         chatSmileBtn.classList.remove('active');
         if(chatStarBtn) chatStarBtn.classList.remove('active');
     };
+
+    // 修复表情包管理底部栏不显示的问题
+    // 将 class 加到 body 上或者更上层容器，确保 CSS 选择器生效
+    function toggleStickerMgrMode(active) {
+        const mgrBottomBar = document.getElementById('sticker-mgr-bottom-bar');
+        const contentArea = document.querySelector('#sticker-mgr-page .wb-content-area');
+        
+        if (active) {
+            if (contentArea) contentArea.classList.add('mgr-mode-active');
+            if (mgrBottomBar) mgrBottomBar.style.display = 'flex';
+        } else {
+            if (contentArea) contentArea.classList.remove('mgr-mode-active');
+            if (mgrBottomBar) mgrBottomBar.style.display = 'none';
+        }
+    }
     
     chatPlusBtn.addEventListener('click', () => {
         if(chatDrawerPlus.classList.contains('active')) {
@@ -2283,38 +2298,56 @@ let systemPrompt = `你扮演角色：${contact.name}。
         const defaultUserAvatar = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23fff"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
 
         let lastMsgTime = 0;
-        let lastMsgDateStr = '';
+
+        // 辅助函数：生成微信风格时间戳
+        function getWechatTime(timestamp) {
+            const now = new Date();
+            const msgDate = new Date(timestamp);
+            
+            const hours = String(msgDate.getHours()).padStart(2, '0');
+            const minutes = String(msgDate.getMinutes()).padStart(2, '0');
+            const timeStr = `${hours}:${minutes}`;
+            
+            // 计算日期差异 (清除时间部分只比较日期)
+            const zeroNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const zeroMsg = new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate());
+            const diffDays = (zeroNow - zeroMsg) / (1000 * 60 * 60 * 24);
+            
+            if (diffDays === 0) {
+                // 今天
+                return timeStr;
+            } else if (diffDays === 1) {
+                // 昨天
+                return `昨天 ${timeStr}`;
+            } else if (diffDays > 1 && diffDays < 7) {
+                // 一周内显示星期
+                const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                return `${weekDays[msgDate.getDay()]} ${timeStr}`;
+            } else {
+                // 一周以上或跨年
+                // 如果跨年显示完整日期
+                if (now.getFullYear() !== msgDate.getFullYear()) {
+                    return `${msgDate.getFullYear()}年${msgDate.getMonth() + 1}月${msgDate.getDate()}日 ${timeStr}`;
+                } else {
+                    return `${msgDate.getMonth() + 1}月${msgDate.getDate()}日 ${timeStr}`;
+                }
+            }
+        }
 
         for (let i = 0; i < msgs.length; i++) {
             const msg = msgs[i];
             const isMe = msg.sender === 'me';
             
-            // 时间戳逻辑
+            // 时间戳逻辑 (每隔5分钟显示一次)
             if (msg.time) {
-                const currentMsgTime = new Date(msg.time);
-                const currentDateStr = `${currentMsgTime.getFullYear()}-${currentMsgTime.getMonth() + 1}-${currentMsgTime.getDate()}`;
-                
-                // 如果是第一条消息，或者跟上一条消息跨天了，或者距离上一条消息超过5分钟
-                if (i === 0 || currentDateStr !== lastMsgDateStr || (msg.time - lastMsgTime > 5 * 60 * 1000)) {
+                // 如果是第一条消息，或者距离上一条消息超过5分钟
+                if (i === 0 || (msg.time - lastMsgTime > 5 * 60 * 1000)) {
                     const timeRow = document.createElement('div');
                     timeRow.className = 'msg-time-stamp';
-                    
-                    const hours = String(currentMsgTime.getHours()).padStart(2, '0');
-                    const minutes = String(currentMsgTime.getMinutes()).padStart(2, '0');
-                    
-                    if (i === 0 || currentDateStr !== lastMsgDateStr) {
-                        // 跨天或第一条消息，显示日期
-                        timeRow.innerText = `${currentMsgTime.getMonth() + 1}.${currentMsgTime.getDate()} ${hours}:${minutes}`;
-                    } else {
-                        // 同一天，只显示时间
-                        timeRow.innerText = `${hours}:${minutes}`;
-                    }
-                    
+                    timeRow.innerText = getWechatTime(msg.time);
                     convMessagesContainer.appendChild(timeRow);
                 }
-                
                 lastMsgTime = msg.time;
-                lastMsgDateStr = currentDateStr;
             }
             
             // 撤回的消息
@@ -4336,13 +4369,27 @@ let systemPrompt = `你扮演角色：${contact.name}。
             if (response.ok) {
                 const result = await response.json();
                 let aiReplyRaw = result.choices[0].message.content;
+                
+                // 去除可能返回的 markdown 代码块标记，防止解析失败
+                aiReplyRaw = aiReplyRaw.replace(/```json/g, '').replace(/```/g, '').trim();
+
                 let messagesArray = [];
                 try {
+                    // 更激进的 JSON 提取，匹配最外层数组
                     const jsonMatch = aiReplyRaw.match(/\[[\s\S]*\]/);
-                    if (jsonMatch) messagesArray = JSON.parse(jsonMatch[0]);
+                    if (jsonMatch) {
+                        messagesArray = JSON.parse(jsonMatch[0]);
+                    } else {
+                        throw new Error("No JSON array found in response");
+                    }
                 } catch(e) { 
-                    // Fallback to lines
-                    messagesArray = aiReplyRaw.split('\n').filter(m => m.trim().length > 0);
+                    // 如果彻底失败，尝试退级解析，并且强行剔除各种 JSON 残留符号和系统 Prompt
+                    console.warn("Background auto-reply JSON parse failed, falling back to line split", e);
+                    let cleanRaw = aiReplyRaw.replace(/[{}"\[\]]/g, '').replace(/type:.*?thought/gi, '').replace(/content:/gi, '');
+                    // 过滤掉可能泄露的 System Prompt
+                    cleanRaw = cleanRaw.replace(/\[System Prompt\].*?\n/gi, '');
+                    
+                    messagesArray = cleanRaw.split('\n').filter(m => m.trim().length > 0);
                 }
 
                 // Filter out non-message elements and clean tags
