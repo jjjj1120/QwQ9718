@@ -24,12 +24,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const apiData = JSON.parse(localStorage.getItem('api_settings') || '{}');
         if (!apiData.url || !apiData.key || !apiData.modelName) return;
 
-        const summaryPrompt = `请根据以下聊天记录，写一段详细的总结。
+        const summaryPrompt = `请对以上聊天内容进行精炼总结。
 【要求】
-1. 不要过度概括，尽可能详细的展示重要事件、发生的事情。
-2. 捕捉用户的小习惯、喜好、情感变化。
-3. 情感记忆不要过度冰冷的叙述，要用有温度的语言。
-4. 输出纯文本总结，不需要任何格式化或前缀。
+1. 仅陈述事实，绝对不要修饰、评价或过度概括，字数要短，便于记忆。
+2. 若发现用户的习惯、喜好、雷点或设定，请单独提取。
+
+【输出格式严格如下】
+[总结]
+(这里写精炼的总结内容)
+[新习惯]
+(习惯1)
+(习惯2)
+(若无则留空)
 【聊天记录】
 ${conversationText}`;
 
@@ -49,7 +55,19 @@ ${conversationText}`;
 
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
             const result = await response.json();
-            let summaryText = result.choices[0].message.content.trim();
+            let rawContent = result.choices[0].message.content.trim();
+            
+            let summaryText = rawContent;
+            let newHabits = [];
+            const summaryMatch = rawContent.match(/\[总结\]([\s\S]*?)(?:\[新习惯\]|$)/);
+            if (summaryMatch) summaryText = summaryMatch[1].trim();
+            
+            const habitsMatch = rawContent.match(/\[新习惯\]([\s\S]*)$/);
+            if (habitsMatch) {
+                newHabits = habitsMatch[1].split('\n')
+                    .map(h => h.trim().replace(/^[-*•\d.]+\s*/, ''))
+                    .filter(h => h && !h.includes('若无则留空') && !h.includes('无') && !h.includes('None'));
+            }
 
             let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
             if (!chatMemories[contactId]) chatMemories[contactId] = [];
@@ -63,6 +81,29 @@ ${conversationText}`;
             });
             
             localStorage.setItem('chat_memories', JSON.stringify(chatMemories));
+            
+            if (newHabits.length > 0) {
+                let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
+                let profile = roleProfiles[contactId] || {};
+                let currentHabitsText = profile.userHabits || '';
+                let currentHabitsList = currentHabitsText.split('\n').map(h => h.trim()).filter(h => h);
+                let added = 0;
+                newHabits.forEach(habit => {
+                    if (!currentHabitsList.some(ch => ch.includes(habit) || habit.includes(ch))) {
+                        currentHabitsList.push(habit);
+                        added++;
+                    }
+                });
+                if (added > 0) {
+                    profile.userHabits = currentHabitsList.join('\n');
+                    roleProfiles[contactId] = profile;
+                    localStorage.setItem('chat_role_profiles', JSON.stringify(roleProfiles));
+                    const memUserHabits = document.getElementById('mem-user-habits');
+                    if (memUserHabits && window.ChatApp && window.ChatApp.currentActiveContactId === contactId) {
+                        memUserHabits.value = profile.userHabits;
+                    }
+                }
+            }
             console.log(`自动总结完成: [${startIndex} - ${end}]`);
         } catch (error) {
             console.error('自动总结失败:', error);
@@ -88,6 +129,8 @@ ${conversationText}`;
     // 习惯集
     const memUserHabits = document.getElementById('mem-user-habits');
     const memSaveHabitsBtn = document.getElementById('mem-save-habits-btn');
+    const memExtractHabitsBtn = document.getElementById('mem-extract-habits-btn');
+    const memExtractCount = document.getElementById('mem-extract-count');
     
     // 回忆录
     const memManualSummaryBtn = document.getElementById('mem-manual-summary-btn');
@@ -219,6 +262,101 @@ ${conversationText}`;
         });
     }
 
+    // 提取习惯
+    if (memExtractHabitsBtn) {
+        memExtractHabitsBtn.addEventListener('click', async () => {
+            const contactId = window.ChatApp?.currentActiveContactId;
+            if (!contactId) {
+                alert('未选中联系人');
+                return;
+            }
+
+            const extractCount = parseInt(memExtractCount.value) || 5;
+            let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
+            let memories = chatMemories[contactId] || [];
+
+            if (memories.length === 0) {
+                alert('当前还没有任何记忆，无法提取。');
+                return;
+            }
+
+            // 取最近的 N 条记忆
+            const recentMemories = memories.slice(-extractCount);
+            const memoryTexts = recentMemories.map((m, i) => `${i + 1}. ${m.text}`).join('\n');
+
+            let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
+            let currentHabits = (roleProfiles[contactId] && roleProfiles[contactId].userHabits) || '';
+
+            const extractPrompt = `你是一个负责总结用户习惯和喜好的助手。
+当前已有习惯集：
+${currentHabits ? currentHabits : "无"}
+
+最新获取的${extractCount}条记忆：
+${memoryTexts}
+
+请你根据最新获取的记忆，提取出关于用户的新的习惯、喜好、禁忌等信息，并与【当前已有习惯集】进行合并。
+要求：
+1. 合并后的内容必须条理清晰，不能有重复的习惯。
+2. 不要删除旧的重要习惯，除非它与新记忆明显冲突，冲突时以新记忆为准。
+3. 请以清晰的列表或段落形式输出合并后的最终习惯集内容。
+4. 只输出最终的习惯集文本，不要输出任何其他的分析、解释或多余的话。`;
+
+            const apiData = JSON.parse(localStorage.getItem('api_settings') || '{}');
+            if (!apiData.url || !apiData.key || !apiData.modelName) {
+                alert('请先配置API信息');
+                return;
+            }
+
+            memExtractHabitsBtn.disabled = true;
+            memExtractHabitsBtn.innerHTML = "<i class='bx bx-loader-alt spin'></i> 提取中...";
+
+            try {
+                let url = apiData.url;
+                if (url.endsWith('/')) url = url.slice(0, -1);
+                if (!url.endsWith('/chat/completions')) url += '/chat/completions';
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiData.key}`
+                    },
+                    body: JSON.stringify({
+                        model: apiData.modelName,
+                        messages: [{ role: 'system', content: extractPrompt }],
+                        temperature: 0.3
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                let newHabits = data.choices[0].message.content.trim();
+
+                if (newHabits) {
+                    memUserHabits.value = newHabits;
+                    
+                    // 自动保存
+                    let profile = roleProfiles[contactId] || {};
+                    profile.userHabits = newHabits;
+                    roleProfiles[contactId] = profile;
+                    localStorage.setItem('chat_role_profiles', JSON.stringify(roleProfiles));
+                    alert('习惯提取并保存成功');
+                } else {
+                    alert('未提取到有效内容');
+                }
+            } catch (error) {
+                console.error('API Error:', error);
+                alert('提取失败: ' + error.message);
+            } finally {
+                memExtractHabitsBtn.disabled = false;
+                memExtractHabitsBtn.innerHTML = "<i class='bx bx-brain'></i> 提取习惯";
+            }
+        });
+    }
+
     // 手动生成弹窗
     if (memManualSummaryBtn) {
         memManualSummaryBtn.addEventListener('click', () => {
@@ -285,12 +423,18 @@ ${conversationText}`;
             memGenerateBtn.innerText = '正在生成回忆...';
             memGenerateBtn.disabled = true;
 
-            const summaryPrompt = `请根据以下聊天记录，写一段详细的总结。
+            const summaryPrompt = `请对以上聊天内容进行精炼总结。
 【要求】
-1. 不要过度概括，尽可能详细的展示重要事件、发生的事情。
-2. 捕捉用户的小习惯、喜好、情感变化。
-3. 情感记忆不要过度冰冷的叙述，要用有温度的语言。
-4. 输出纯文本总结，不需要任何格式化或前缀。
+1. 仅陈述事实，绝对不要修饰、评价或过度概括，字数要短，便于记忆。
+2. 若发现用户的习惯、喜好、雷点或设定，请单独提取。
+
+【输出格式严格如下】
+[总结]
+(这里写精炼的总结内容)
+[新习惯]
+(习惯1)
+(习惯2)
+(若无则留空)
 【聊天记录】
 ${conversationText}`;
 
@@ -310,7 +454,19 @@ ${conversationText}`;
 
                 if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                 const result = await response.json();
-                let summaryText = result.choices[0].message.content.trim();
+                let rawContent = result.choices[0].message.content.trim();
+                
+                let summaryText = rawContent;
+                let newHabits = [];
+                const summaryMatch = rawContent.match(/\[总结\]([\s\S]*?)(?:\[新习惯\]|$)/);
+                if (summaryMatch) summaryText = summaryMatch[1].trim();
+                
+                const habitsMatch = rawContent.match(/\[新习惯\]([\s\S]*)$/);
+                if (habitsMatch) {
+                    newHabits = habitsMatch[1].split('\n')
+                        .map(h => h.trim().replace(/^[-*•\d.]+\s*/, ''))
+                        .filter(h => h && !h.includes('若无则留空') && !h.includes('无') && !h.includes('None'));
+                }
 
                 // 保存到记忆库
                 let chatMemories = JSON.parse(localStorage.getItem('chat_memories') || '{}');
@@ -325,6 +481,29 @@ ${conversationText}`;
                 });
                 
                 localStorage.setItem('chat_memories', JSON.stringify(chatMemories));
+                
+                if (newHabits.length > 0) {
+                    let roleProfiles = JSON.parse(localStorage.getItem('chat_role_profiles') || '{}');
+                    let profile = roleProfiles[contactId] || {};
+                    let currentHabitsText = profile.userHabits || '';
+                    let currentHabitsList = currentHabitsText.split('\n').map(h => h.trim()).filter(h => h);
+                    let added = 0;
+                    newHabits.forEach(habit => {
+                        if (!currentHabitsList.some(ch => ch.includes(habit) || habit.includes(ch))) {
+                            currentHabitsList.push(habit);
+                            added++;
+                        }
+                    });
+                    if (added > 0) {
+                        profile.userHabits = currentHabitsList.join('\n');
+                        roleProfiles[contactId] = profile;
+                        localStorage.setItem('chat_role_profiles', JSON.stringify(roleProfiles));
+                        const memUserHabits = document.getElementById('mem-user-habits');
+                        if (memUserHabits && window.ChatApp && window.ChatApp.currentActiveContactId === contactId) {
+                            memUserHabits.value = profile.userHabits;
+                        }
+                    }
+                }
                 
                 renderMemoryList(contactId);
                 memManualModal.style.display = 'none';
@@ -411,6 +590,9 @@ ${conversationText}`;
         backupBtn.addEventListener('click', () => {
             const keysToBackup = [
                 'chat_contacts', 'chat_list', 'chat_messages', 'chat_sticker_groups', 'chat_role_profiles', 'chat_worldbooks',
+                'chat_memories', 'chat_context_limits', 'chat_mem_inject_limits', 'chat_auto_mem_enabled', 'chat_auto_mem_thresholds',
+                'chat_custom_gifts', 'ss_badges', 'ss_companion_stars', 'user_stars', 'ss_last_checkin',
+                'moments_data', 'moment_ai_settings', 'line_profile_data',
                 'api_settings', 'nai_settings', 'selectedWallpaper', 'customFontFamily', 'customFontUrl', 'customFontDataUrl',
                 'image-target-avatar-1', 'image-target-avatar-2', 'image-target-top-1', 'image-target-top-2', 'image-target-top-3',
                 'image-target-main-photo', 'profile-widget-bg', 'editable-text-1', 'editable-text-2'

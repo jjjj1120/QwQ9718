@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AI Home">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#000000">
     <title>AI Home Screen</title>
+    <link rel="apple-touch-icon" href="icon-192.png">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <style id="custom-font-style-tag"></style>
     <link rel="stylesheet" href="style.css?v=4">
+    <link rel="manifest" href="manifest.json">
 </head>
 <body>
 
@@ -228,8 +231,9 @@
                     <br><br>
                     <small>建议：请尽量保持浏览器不被完全关闭，移动端请勿划掉后台卡片。</small>
                 </p>
-                <button class="tp-submit-btn" id="request-notify-btn">点击授权通知</button>
-                <button class="tp-submit-btn" id="test-notify-btn" style="margin-top: 15px; background: #fff; color: #007AFF; border: 1px solid #007AFF; box-shadow: none;">检测后台弹窗</button>
+                <button class="tp-submit-btn" id="request-notify-btn">1. 点击授权通知权限</button>
+                <button class="tp-submit-btn" id="start-keep-alive-btn" style="margin-top: 15px; background: #fff; color: #ff9800; border: 1px solid #ff9800; box-shadow: none;">2. 开启音频防杀保活</button>
+                <button class="tp-submit-btn" id="test-notify-btn" style="margin-top: 15px; background: #fff; color: #007AFF; border: 1px solid #007AFF; box-shadow: none;">3. 检测后台弹窗</button>
                 <p style="font-size: 12px; color: #999; margin-top: 10px; line-height: 1.4;">点击检测后，请在5秒内将应用退到后台。<br>成功开启的话会收到成功的消息弹窗。</p>
                 <div id="notify-status" style="margin-top: 15px; font-size: 13px; color: #888;">当前状态: 未知</div>
             </div>
@@ -1036,6 +1040,12 @@
             <div id="mem-view-habits" class="mem-view-panel">
                 <div class="mem-notebook-container">
                     <div class="mem-notebook-header">User Habits & Preferences</div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                        <input type="number" id="mem-extract-count" placeholder="提取近期记忆条数" value="5" min="1" style="flex: 1; padding: 8px; border: 1px solid #eaeaea; border-radius: 8px; font-size: 13px;">
+                        <button class="save-btn" id="mem-extract-habits-btn" style="background:#007AFF; color:#fff; padding:8px 15px; border-radius:8px; font-size:13px; white-space:nowrap;">
+                            <i class='bx bx-brain'></i> 提取习惯
+                        </button>
+                    </div>
                     <textarea id="mem-user-habits" class="mem-notebook-textarea" placeholder="记录用户的喜好、习惯、禁忌等... (例如: 喜欢喝冰美式，半夜容易醒)"></textarea>
                     <div style="text-align: right; margin-top: 10px;">
                         <button class="save-btn" id="mem-save-habits-btn">保存修改</button>
@@ -1157,7 +1167,20 @@
     <input type="file" class="hidden-file-input" id="upload-conv-avatar" accept="image/*">
 </div>
 
+<audio id="keep-alive-audio" loop src="silent.wav" style="display:none;"></audio>
+
 <script src="app.js?v=4"></script>
 <script src="features.js?v=4"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                console.log('SW registered!', reg);
+            }).catch(err => {
+                console.log('SW registration failed: ', err);
+            });
+        });
+    }
+</script>
 </body>
 </html>

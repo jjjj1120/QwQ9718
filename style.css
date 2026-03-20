@@ -18,10 +18,50 @@
             user-select: none;
         }
         
-        /* 针对所有滚动区域启用硬件加速和流畅滚动 */
-        .chat-content-area, #add-contact-page, #settings-page, #api-settings-page, #nai-settings-page, #keep-alive-settings-page, .wb-content-area, .conv-messages-area, .conv-drawer, #role-profile-page, .beautify-content, .sticker-grid, .sticker-drawer-tabs, .wb-grid {
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y !important;
+    /* PWA Standalone Mode Adjustments (Only affects when launched from Home Screen) */
+    body.pwa-standalone {
+        /* Add top safe area, leave bottom for sticky elements */
+        padding: 0;
+        padding-top: env(safe-area-inset-top);
+        height: 100vh;
+        height: -webkit-fill-available;
+        width: 100vw;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    
+    body.pwa-standalone #phone-screen {
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        top: env(safe-area-inset-top);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 0;
+        height: calc(100% - env(safe-area-inset-top));
+    }
+
+    /* Add Safe Area Padding to Bottom Navs to lift them above Home Indicator */
+    body.pwa-standalone .chat-bottom-nav,
+    body.pwa-standalone .bottom-nav,
+    body.pwa-standalone .wb-bottom-nav,
+    body.pwa-standalone .sticker-mgr-bottom-bar,
+    body.pwa-standalone #mf-comment-bar,
+    body.pwa-standalone .conv-bottom-container {
+        padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    }
+    
+    /* Ensure content containers don't get hidden behind the taller nav bars */
+    body.pwa-standalone .chat-list, 
+    body.pwa-standalone .contact-list {
+        padding-bottom: calc(110px + env(safe-area-inset-bottom)) !important;
+    }
+
+    /* 针对所有滚动区域启用硬件加速和流畅滚动 */
+    .chat-content-area, #add-contact-page, #settings-page, #api-settings-page, #nai-settings-page, #keep-alive-settings-page, .wb-content-area, .conv-messages-area, .conv-drawer, #role-profile-page, .beautify-content, .sticker-grid, .sticker-drawer-tabs, .wb-grid {
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y !important;
             overscroll-behavior-y: auto !important;
             will-change: scroll-position;
         }
@@ -204,7 +244,10 @@
         .msg-row.sent.hide-avatar .msg-avatar,
         .msg-row.received.hide-avatar .msg-avatar { visibility: hidden; pointer-events: none; }
         
-        .msg-bubble { max-width: 65%; padding: 6px 10px; font-size: 13.5px; line-height: 1.45; letter-spacing: 0.2px; position: relative; word-wrap: break-word; }
+        .msg-bubble { max-width: 65%; padding: 8px 12px; font-size: 14.5px; line-height: 1.5; letter-spacing: 0.2px; position: relative; word-break: break-all; word-wrap: break-word; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+        .msg-bubble img { max-width: 100%; height: auto; vertical-align: middle; display: inline-block; margin: 2px 0; border-radius: 8px; }
+        .msg-bubble-sticker { background: transparent !important; padding: 0 !important; border: none !important; box-shadow: none !important; }
+        .msg-bubble-sticker img { max-width: 150px !important; }
         
         /* 发送方 (自己) 深灰模式 */
         .msg-row.sent .msg-bubble { background-color: #333336; color: #fff; border-radius: 18px 18px 6px 18px; border: 1px solid rgba(255,255,255,0.05); }
@@ -290,7 +333,7 @@
         }
 
         /* 语音气泡与转文字结果 */
-        .msg-bubble-col { display: flex; flex-direction: column; align-items: flex-start; max-width: 72%; }
+        .msg-bubble-col { display: flex; flex-direction: column; align-items: flex-start; max-width: 72%; flex-shrink: 1; min-width: 0; }
         .msg-row.sent .msg-bubble-col { align-items: flex-end; }
         
         .voice-bubble { display: flex; align-items: center; gap: 8px; cursor: pointer; height: 44px; padding: 0 16px; border-radius: 22px; font-weight: 600; color: #222; }
@@ -1111,6 +1154,17 @@
         .moment-name { font-size: 15px; font-weight: 700; color: #111; }
         .moment-time { font-size: 13px; color: #888; }
         .moment-text { font-size: 15px; color: #333; line-height: 1.5; word-wrap: break-word; }
+
+        .msg-time-stamp {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0 10px;
+            font-size: 12px;
+            color: #999;
+            font-weight: 500;
+            width: 100%;
+        }
         
         .moment-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
         .moment-img-item {
